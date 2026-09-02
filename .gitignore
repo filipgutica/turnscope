@@ -1,0 +1,10 @@
+node_modules/
+dist/
+dist-electron/
+web-dist/
+coverage/
+.turnscope/
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
