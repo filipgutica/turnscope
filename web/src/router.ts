@@ -4,6 +4,7 @@ import OverviewView from './views/OverviewView.vue'
 import PatternsView from './views/PatternsView.vue'
 import ProjectView from './views/ProjectView.vue'
 import SessionView from './views/SessionView.vue'
+import SettingsView from './views/SettingsView.vue'
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -12,5 +13,6 @@ export const router = createRouter({
     { path: '/projects/:id', name: 'project', component: ProjectView },
     { path: '/sessions/:id', name: 'session', component: SessionView },
     { path: '/patterns', name: 'patterns', component: PatternsView },
+    { path: '/settings', name: 'settings', component: SettingsView },
   ],
 })

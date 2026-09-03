@@ -11,6 +11,12 @@ import type {
   SignalOverrideInput,
   SourceEvidenceResponse,
 } from './contracts.js'
+import type {
+  NormalizedTheme,
+  OpenVsxThemeSearchResult,
+  ThemeImportResult,
+  ThemeRemovalResult,
+} from './theme.js'
 
 export interface TurnscopeApi {
   getOverview: () => Promise<OverviewResponse>
@@ -30,4 +36,15 @@ export interface TurnscopeImportApi {
   cancelImport: () => Promise<ImportJobStatus>
 }
 
-export type TurnscopeDesktopApi = TurnscopeApi & TurnscopeImportApi
+export interface TurnscopeThemeApi {
+  getImportedTheme: () => Promise<NormalizedTheme | null>
+  importVsCodeTheme: () => Promise<ThemeImportResult>
+  searchOpenVsxThemes: (query: string) => Promise<OpenVsxThemeSearchResult>
+  importOpenVsxTheme: (
+    extensionId: string,
+    preferredAppearance: 'light' | 'dark',
+  ) => Promise<ThemeImportResult>
+  removeImportedTheme: () => Promise<ThemeRemovalResult>
+}
+
+export type TurnscopeDesktopApi = TurnscopeApi & TurnscopeImportApi & TurnscopeThemeApi

@@ -11,13 +11,6 @@
       </button>
     </header>
 
-    <ImportStatusPanel
-      v-if="importStatus"
-      :status="importStatus"
-      @start="startImport"
-      @cancel="cancelImport"
-    />
-
     <p v-if="loading" class="status-message">Loading overview…</p>
     <div v-else-if="error" class="error-message" role="alert">
       <p>{{ error }}</p>
@@ -75,13 +68,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, inject, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import type { ImportJobStatus, OverviewResponse, ProjectSummary } from '@shared/contracts'
+import type { OverviewResponse, ProjectSummary } from '@shared/contracts'
 
 import { apiKey } from '../api'
-import ImportStatusPanel from '../components/ImportStatusPanel.vue'
 import MetricCard from '../components/MetricCard.vue'
 import VirtualDataTable from '../components/VirtualDataTable.vue'
 import { formatDate } from '../format'
@@ -95,12 +87,7 @@ if (!api) {
 const overview = ref<OverviewResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const importStatus = ref<ImportJobStatus | null>(null)
 const projectSearch = ref('')
-const importApi = api.getImportStatus && api.startImport && api.cancelImport
-  ? { getStatus: api.getImportStatus, start: api.startImport, cancel: api.cancelImport }
-  : null
-let importPollTimer: ReturnType<typeof setTimeout> | undefined
 
 const filteredProjects = computed(() => {
   const query = projectSearch.value.trim().toLocaleLowerCase()
@@ -138,65 +125,5 @@ const loadOverview = async (): Promise<void> => {
   }
 }
 
-const scheduleImportPoll = (): void => {
-  if (importStatus.value?.state !== 'running') return
-  importPollTimer = setTimeout(refreshImportStatus, 500)
-}
-
-const refreshImportStatus = async (): Promise<void> => {
-  if (!importApi) return
-  const previousState = importStatus.value?.state
-  try {
-    importStatus.value = await importApi.getStatus()
-    if (previousState === 'running' && importStatus.value.state !== 'running') {
-      await loadOverview()
-    }
-  } catch (cause) {
-    if (importStatus.value) {
-      importStatus.value = {
-        ...importStatus.value,
-        state: 'failed',
-        phase: null,
-        completedAt: new Date().toISOString(),
-        error: cause instanceof Error ? cause.message : 'Unable to read import status',
-      }
-    }
-  } finally {
-    scheduleImportPoll()
-  }
-}
-
-const startImport = async (): Promise<void> => {
-  if (!importApi) return
-  if (importPollTimer) clearTimeout(importPollTimer)
-  try {
-    importStatus.value = await importApi.start()
-  } catch (cause) {
-    if (importStatus.value) {
-      importStatus.value = {
-        ...importStatus.value,
-        state: 'failed',
-        phase: null,
-        completedAt: new Date().toISOString(),
-        error: cause instanceof Error ? cause.message : 'Unable to start import',
-      }
-    }
-  }
-  scheduleImportPoll()
-}
-
-const cancelImport = async (): Promise<void> => {
-  if (!importApi) return
-  if (importPollTimer) clearTimeout(importPollTimer)
-  importStatus.value = await importApi.cancel()
-  await loadOverview()
-}
-
-onMounted(() => {
-  void loadOverview()
-  void refreshImportStatus()
-})
-onUnmounted(() => {
-  if (importPollTimer) clearTimeout(importPollTimer)
-})
+onMounted(loadOverview)
 </script>
