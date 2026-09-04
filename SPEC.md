@@ -177,11 +177,13 @@ The page must preserve provider provenance without exposing provider-specific ke
 
 ## Session detail requirements
 
+- Keep session detail focused on one job: reviewing events in source order and opening their raw provenance.
+- Use a compact header, a single inline filter bar, and an open event stream rather than nested panels and cards.
 - Preserve the session event timeline and direct event anchors.
 - Show normalized tool status alongside raw provenance when present.
 - Opening evidence from Activity or a tool detail lands on and visibly identifies the supporting event.
 - Filters and drill-down controls remain keyboard accessible.
-- Correction candidates, instruction classification, and other heuristics appear only in a collapsed diagnostic area.
+- Correction candidates and other heuristic findings appear only in Settings under Advanced Diagnostics. Session detail does not include heuristic classification or maintenance controls.
 - Injected instructions, plugin catalogs, and host metadata are never classified as user corrections.
 
 ## Settings and data-health requirements
