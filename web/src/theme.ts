@@ -238,14 +238,14 @@ export const useTheme = (themeApi: TurnscopeThemeApi | undefined = window.turnsc
     }),
     { immediate: true },
   )
-  watch(preference, (value, previous) => {
+  watch(preference, (value) => {
     if (value === 'system') localStorage.removeItem('turnscope-theme')
     else localStorage.setItem('turnscope-theme', value)
-    if (value !== 'imported' && previous === 'imported' && importedTheme.value) {
+    if (value !== 'imported' && !isRemovingImportedTheme.value) {
       const label = value[0]?.toUpperCase() + value.slice(1)
       status.value = { tone: 'neutral', message: `Using ${label} theme.` }
     }
-  })
+  }, { flush: 'sync' })
   onMounted(() => {
     media.addEventListener('change', handleSystemChange)
     void loadImportedTheme()

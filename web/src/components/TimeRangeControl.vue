@@ -1,10 +1,11 @@
 <template>
-  <div class="range-control" role="group" :aria-label="label">
+  <div class="range-control" role="group" :aria-label="label" :aria-busy="disabled">
     <button
       v-for="option in analyticsRangeOptions"
       :key="option.value"
       type="button"
       :aria-pressed="modelValue === option.value"
+      :disabled="disabled"
       @click="emit('update:modelValue', option.value)"
     >
       {{ option.label }}
@@ -17,9 +18,10 @@ import type { AnalyticsRange } from '@shared/contracts'
 
 import { analyticsRangeOptions } from '../analytics-range'
 
-const { modelValue, label = 'Analytics time range' } = defineProps<{
+const { modelValue, label = 'Analytics time range', disabled = false } = defineProps<{
   modelValue: AnalyticsRange
   label?: string
+  disabled?: boolean
 }>()
 
 const emit = defineEmits<{

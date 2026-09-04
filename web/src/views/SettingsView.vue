@@ -2,9 +2,7 @@
   <section class="page-stack settings-page">
     <header class="page-heading">
       <div>
-        <p class="eyebrow">Application preferences</p>
         <h1>Settings</h1>
-        <p>Choose Turnscope’s appearance and manage local agent data sources.</p>
       </div>
     </header>
 
@@ -178,11 +176,33 @@
         <UiBadge tone="info">Planned</UiBadge>
       </UiSurface>
     </section>
+
+    <section id="data-health" class="settings-group" aria-labelledby="data-health-settings-heading">
+      <div>
+        <h2 id="data-health-settings-heading">Data health and diagnostics</h2>
+        <p v-if="dataHealth">
+          {{ formatNumber(dataHealth.importedSessions) }} imported sessions ·
+          status known for {{ formatCoverageCount(dataHealth.toolStatusCoverage) }} invocations ·
+          {{ formatNumber(dataHealth.activeWarnings.length) }} active warnings
+        </p>
+        <p v-else-if="dataHealthError">Data health is unavailable: {{ dataHealthError }}</p>
+        <p v-else>Loading imported data coverage…</p>
+      </div>
+
+      <details class="settings-diagnostics">
+        <summary>View coverage and advanced diagnostics</summary>
+        <DataHealthPanel v-if="dataHealth" :data-health="dataHealth" range-label="All time" />
+        <RouterLink class="diagnostics-link" :to="{ name: 'patterns' }">
+          Open pattern diagnostics
+        </RouterLink>
+      </details>
+    </section>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import { RouterLink } from 'vue-router'
 
 import {
   UiAlert,
@@ -194,9 +214,11 @@ import {
   UiSurface,
 } from '@filipgutica/ui'
 
-import type { ImportJobStatus } from '@shared/contracts'
+import type { DataHealthSummary, ImportJobStatus } from '@shared/contracts'
 
+import { formatCoverageCount } from '../analytics-range'
 import { apiKey } from '../api'
+import DataHealthPanel from '../components/DataHealthPanel.vue'
 import ImportStatusPanel from '../components/ImportStatusPanel.vue'
 import { themeKey } from '../theme'
 
@@ -208,6 +230,8 @@ const searchQuery = ref('')
 const hasSearched = ref(false)
 const suggestions = ['Catppuccin', 'Dracula', 'Nord', 'Tokyo Night']
 const importStatus = ref<ImportJobStatus | null>(null)
+const dataHealth = ref<DataHealthSummary | null>(null)
+const dataHealthError = ref<string | null>(null)
 const importApi = api.getImportStatus && api.startImport && api.cancelImport
   ? { getStatus: api.getImportStatus, start: api.startImport, cancel: api.cancelImport }
   : null
@@ -231,6 +255,16 @@ const formatDownloads = (value: number): string => new Intl.NumberFormat(undefin
   notation: value >= 1_000 ? 'compact' : 'standard',
   maximumFractionDigits: 1,
 }).format(value)
+const formatNumber = (value: number): string => new Intl.NumberFormat().format(value)
+
+const loadDataHealth = async (): Promise<void> => {
+  dataHealthError.value = null
+  try {
+    dataHealth.value = (await api.getOverview({ range: 'all' })).dataHealth
+  } catch (cause) {
+    dataHealthError.value = cause instanceof Error ? cause.message : 'Unable to load coverage'
+  }
+}
 
 const submitSearch = async (): Promise<void> => {
   hasSearched.value = true
@@ -291,7 +325,10 @@ const cancelImport = async (): Promise<void> => {
   importStatus.value = await importApi.cancel()
 }
 
-onMounted(refreshImportStatus)
+onMounted(() => {
+  void refreshImportStatus()
+  void loadDataHealth()
+})
 onUnmounted(() => {
   if (importPollTimer) clearTimeout(importPollTimer)
 })

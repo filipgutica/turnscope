@@ -78,7 +78,7 @@ describe('SessionView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', name: 'overview', component: { template: '<div />' } },
+        { path: '/', name: 'activity', component: { template: '<div />' } },
         { path: '/sessions/:id', name: 'session', component: SessionView },
       ],
     })
@@ -134,7 +134,7 @@ describe('SessionView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', name: 'overview', component: { template: '<div />' } },
+        { path: '/', name: 'activity', component: { template: '<div />' } },
         { path: '/sessions/:id', name: 'session', component: SessionView },
       ],
     })

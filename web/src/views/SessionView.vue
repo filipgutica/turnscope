@@ -257,8 +257,8 @@ const highlightedEventId = computed(() =>
 )
 const backTarget = computed<RouteLocationRaw>(() => typeof route.query.project === 'string'
   ? { name: 'project', params: { id: route.query.project } }
-  : { name: 'overview' })
-const backLabel = computed(() => typeof route.query.project === 'string' ? 'project' : 'overview')
+  : { name: 'activity' })
+const backLabel = computed(() => typeof route.query.project === 'string' ? 'project' : 'activity')
 const orderedTimeline = computed(() =>
   detail.value === null
     ? []

@@ -79,9 +79,8 @@ const mountSettings = async ({
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/', name: 'overview', component: { template: '<div>Overview</div>' } },
-      { path: '/tool-health', name: 'tool-health', component: { template: '<div>Tool Health</div>' } },
-      { path: '/patterns', name: 'patterns', component: { template: '<div>Patterns</div>' } },
+      { path: '/', name: 'activity', component: { template: '<div>Activity</div>' } },
+      { path: '/settings/diagnostics', name: 'patterns', component: { template: '<div>Patterns</div>' } },
       { path: '/settings', name: 'settings', component: SettingsView },
     ],
   })
@@ -119,6 +118,10 @@ describe('settings and theme controls', () => {
     const wrapper = await mountSettings()
 
     expect(wrapper.get('nav').text()).toContain('Settings')
+    expect(wrapper.get('nav').text()).toContain('Activity')
+    expect(wrapper.get('nav').text()).not.toContain('Overview')
+    expect(wrapper.get('nav').text()).not.toContain('Tool Health')
+    expect(wrapper.get('nav').text()).not.toContain('Patterns')
     expect(wrapper.get('select[aria-label="Color theme"]').text()).toContain('System')
     expect(wrapper.get('select[aria-label="Color theme"]').text()).toContain('Light')
     expect(wrapper.get('select[aria-label="Color theme"]').text()).not.toContain('Catppuccin')
@@ -162,6 +165,16 @@ describe('settings and theme controls', () => {
 
     expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('light')
     expect(wrapper.text()).toContain('Imported theme removed. Using Light theme.')
+  })
+
+  it('updates the status text for every built-in theme transition', async () => {
+    const wrapper = await mountSettings()
+
+    await wrapper.get('select[aria-label="Color theme"]').setValue('dark')
+    expect(wrapper.text()).toContain('Using Dark theme.')
+
+    await wrapper.get('select[aria-label="Color theme"]').setValue('system')
+    expect(wrapper.text()).toContain('Using System theme.')
   })
 
   it('disables every theme mutation while a local import is pending', async () => {

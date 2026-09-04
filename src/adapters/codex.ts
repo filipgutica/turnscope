@@ -17,7 +17,7 @@ import type {
   SourceRecord,
 } from './types.js'
 
-const ADAPTER_VERSION = 'codex-rollout-jsonl-v4'
+const ADAPTER_VERSION = 'codex-rollout-jsonl-v5'
 const SUPPORTED_VERSION = /^0\.152(?:\.|$)/
 const RAW_SOURCE_WARNING =
   'Codex rollout JSONL is an undocumented local format. This adapter is version-gated and may require updates after Codex upgrades.'
@@ -92,13 +92,13 @@ export const stripInjectedUserContent = (text: string): string => {
 
 export const normalizeCodexToolCategory = (rawName: string | null): ToolCategory => {
   const name = rawName?.toLocaleLowerCase().replaceAll('-', '_') ?? ''
-  if (/^(?:command|command_execution|exec_command|shell|bash)$/.test(name)) return 'terminal'
+  if (/^(?:command|command_execution|exec|exec_command|shell|bash)$/.test(name)) return 'terminal'
   if (/^(?:read|read_file|file_read)$/.test(name)) return 'file_read'
   if (/^(?:apply_patch|patch_apply|edit|write|write_file|file_change)$/.test(name)) return 'file_change'
   if (/^(?:search|grep|rg|find|glob)$/.test(name)) return 'search'
   if (/^(?:web|web_search|web_search_call)$/.test(name)) return 'web'
   if (/^(?:browser|computer|computer_use|preview)$/.test(name)) return 'browser'
-  if (/^(?:subagent|sub_agent|collab_agent_tool_call)$/.test(name)) return 'subagent'
+  if (/^(?:subagent|sub_agent|collab_agent_tool_call|followup_task|interrupt_agent|list_agents|send_message|spawn_agent|wait_agent)$/.test(name)) return 'subagent'
   if (name.startsWith('mcp') || name.includes('__mcp__')) return 'mcp'
   return 'other'
 }

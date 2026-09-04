@@ -1,6 +1,6 @@
 # Turnscope Product and Experience Specification
 
-**Status:** Awaiting concept approval
+**Status:** Implemented and verified on `t3code/turnscope-observability-redesign`
 
 **Scope:** First useful local agent-tool observability release
 
@@ -211,6 +211,15 @@ Where the source supports it, normalization follows:
 
 Every normalized field retains source provenance and a coverage state.
 
+### Future Claude Code source contract
+
+- A future Claude Code adapter should prefer the documented OpenTelemetry event and trace contract over transcript JSONL. Transcript support, if added, remains explicitly version-gated.
+- Preserve Claude's interaction, model-request, tool, permission-wait, execution, retry-attempt, and outcome relationships so permission delay is not reported as execution time and API retries are not inferred from repeated display text.
+- Preserve applicable OpenTelemetry `gen_ai.*` semantic attributes as provenance while mapping them into provider-neutral Turnscope contracts.
+- This release defines that compatibility seam only; it does not ingest Claude Code data.
+
+Primary references: [Claude Code monitoring](https://code.claude.com/docs/en/monitoring-usage), [Claude Code costs](https://code.claude.com/docs/en/costs), and [OpenTelemetry GenAI semantic attributes](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/).
+
 ### Tool invocation integrity
 
 - Investigate and use provider invocation identifiers and explicit result relationships before pairing records.
@@ -351,4 +360,4 @@ A short comprehension check must confirm that a user can answer these questions 
 - **Status interpretation:** Provider sources may distinguish result, permission, and cancellation phases differently. The adapter must preserve those distinctions instead of forcing every source into a single success flag.
 - **Sparse evidence:** Direct observed issues can be useful under partial coverage, but absence of an issue cannot be presented as evidence of success beyond the known-status denominator.
 - **Outcome limits:** No outcome comparison appears until the source provides a defensible outcome contract and enough coverage to support it.
-- **Implementation gate:** UI implementation remains blocked on approval of the sparse desktop and narrow-width concept derived from this specification.
+- **Implementation gate:** The sparse desktop and narrow-width concepts were approved before implementation; the shipped Activity hierarchy follows those concepts.

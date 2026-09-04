@@ -236,7 +236,7 @@ describe('Codex import', () => {
       database,
       adapter: {
         ...createCodexAdapter({ sourceRoot }),
-        adapterVersion: 'codex-rollout-jsonl-v5',
+        adapterVersion: 'codex-rollout-jsonl-v6',
       },
     })).resolves.toMatchObject({ recordsInserted: 0 })
 

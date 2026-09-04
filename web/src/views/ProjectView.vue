@@ -1,6 +1,6 @@
 <template>
   <section class="page-stack">
-    <RouterLink class="back-link" :to="{ name: 'overview' }">← Back to overview</RouterLink>
+    <RouterLink class="back-link" :to="{ name: 'activity' }">← Back to activity</RouterLink>
 
     <p v-if="loading" class="status-message">Loading project…</p>
     <UiAlert v-else-if="error" class="error-message" tone="danger">

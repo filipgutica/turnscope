@@ -155,6 +155,11 @@ export interface SessionSpanSummary {
 export interface OverviewFinding {
   id: string
   title: string
+  sessionTitle: string
+  toolCategory: ToolCategory
+  toolLabel: string
+  status: Exclude<NormalizedToolStatus, 'success'>
+  occurredAt: string | null
   reason: string
   measurementClass: MeasurementClass
   evidence: EvidenceRef[]
@@ -288,10 +293,19 @@ export type ToolCategory =
 
 export type NormalizedToolStatus = 'success' | 'failure' | 'rejected' | 'cancelled'
 
+export interface ToolInvocationEvidence extends EvidenceRef {
+  sessionTitle: string
+  rawToolName: string | null
+  sourceStatus: string | null
+  status: NormalizedToolStatus | null
+  occurredAt: string | null
+}
+
 export interface ToolHealthCategory {
   id: string
   category: ToolCategory
   label: string
+  rawNames: { name: string; invocations: number }[]
   uniqueInvocations: number
   statusCoverage: CoverageValue
   successfulInvocations: number
@@ -306,7 +320,7 @@ export interface ToolHealthCategory {
   medianDurationMs: number | null
   p90DurationMs: number | null
   timingCoverage: CoverageValue
-  evidence: EvidenceRef[]
+  evidence: ToolInvocationEvidence[]
 }
 
 export interface ToolHealthResponse {

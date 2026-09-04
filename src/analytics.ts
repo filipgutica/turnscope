@@ -12,6 +12,7 @@ import type {
   EvidenceRef,
   ImportWarning,
   MetricValue,
+  NormalizedToolStatus,
   OverviewResponse,
   OverviewFinding,
   PatternSignal,
@@ -428,6 +429,24 @@ export const getDataHealth = ({
 
 const attentionThreshold = 0.5
 
+const toolCategoryLabels: Record<ToolCategory, string> = {
+  terminal: 'Terminal',
+  file_read: 'File reads',
+  file_change: 'File changes',
+  search: 'Search',
+  web: 'Web',
+  browser: 'Browser',
+  subagent: 'Subagents',
+  mcp: 'MCP',
+  other: 'Unclassified',
+}
+
+const observedIssueReason = (status: Exclude<NormalizedToolStatus, 'success'>): string => {
+  if (status === 'rejected') return 'Source reported that permission was rejected.'
+  if (status === 'cancelled') return 'Source reported that this invocation was cancelled.'
+  return 'Source reported this invocation as failed.'
+}
+
 export const getOverview = (
   database: TurnscopeDatabase,
   query: AnalyticsRangeQuery = {},
@@ -462,24 +481,70 @@ export const getOverview = (
     GROUP BY s.id, s.title
     ORDER BY issueCount DESC, COALESCE(s.ended_at, s.started_at) DESC
   `).all(...toolRange.parameters) as { sessionId: string; title: string; issueCount: number; eventId: string | null }[]
+  const issueRows = database.prepare(`
+    WITH ranked_issues AS (
+      SELECT
+        ti.id,
+        ti.session_id AS sessionId,
+        s.title AS sessionTitle,
+        s.repository,
+        ti.category,
+        ti.raw_tool_name AS rawToolName,
+        ti.status,
+        ti.occurred_at AS occurredAt,
+        ti.status_event_id AS eventId,
+        COALESCE(ti.occurred_at, s.ended_at, s.started_at) AS sortAt,
+        ROW_NUMBER() OVER (
+          PARTITION BY ti.session_id, ti.category, ti.status
+          ORDER BY COALESCE(ti.occurred_at, s.ended_at, s.started_at) DESC, ti.id
+        ) AS issueRank
+      FROM tool_invocations ti
+      INNER JOIN sessions s ON s.id = ti.session_id
+      WHERE ${toolRange.clause}
+        AND ti.status IN ('failure', 'rejected', 'cancelled')
+        AND ti.status_event_id IS NOT NULL
+    )
+    SELECT id, sessionId, sessionTitle, repository, category, rawToolName, status, occurredAt, eventId
+    FROM ranked_issues
+    WHERE issueRank = 1
+    ORDER BY sortAt DESC, id
+    LIMIT 20
+  `).all(...toolRange.parameters) as {
+    id: string
+    sessionId: string
+    sessionTitle: string
+    repository: string | null
+    category: ToolCategory
+    rawToolName: string | null
+    status: Exclude<NormalizedToolStatus, 'success'>
+    occurredAt: string | null
+    eventId: string
+  }[]
   const evidenceForAttention = attentionRows.flatMap((row) => row.eventId ? [{
     eventId: row.eventId,
     sessionId: row.sessionId,
     label: `${row.title} · reported tool issue`,
   }] : []).slice(0, 5)
-  const findings: OverviewFinding[] = canShowAttention
-    ? attentionRows.slice(0, 5).flatMap((row) => row.eventId === null ? [] : [{
-        id: `attention-${row.sessionId}`,
-        title: row.title,
-        reason: `${row.issueCount} tool invocation${row.issueCount === 1 ? '' : 's'} reported failure, rejection, or cancellation in this range.`,
-        measurementClass: 'derived' as const,
-        evidence: [{
-          eventId: row.eventId,
-          sessionId: row.sessionId,
-          label: 'Open representative source event',
-        }],
-      }])
-    : []
+  const findings: OverviewFinding[] = issueRows.map((row) => ({
+    id: `issue-${row.id}`,
+    title: row.sessionTitle === 'Untitled session' && row.repository
+      ? basename(row.repository) || row.sessionTitle
+      : row.sessionTitle,
+    sessionTitle: row.sessionTitle === 'Untitled session' && row.repository
+      ? basename(row.repository) || row.sessionTitle
+      : row.sessionTitle,
+    toolCategory: row.category,
+    toolLabel: toolCategoryLabels[row.category],
+    status: row.status,
+    occurredAt: row.occurredAt,
+    reason: observedIssueReason(row.status),
+    measurementClass: 'direct',
+    evidence: [{
+      eventId: row.eventId,
+      sessionId: row.sessionId,
+      label: 'Open event',
+    }],
+  }))
   const recentRows = database.prepare(`
     SELECT
       s.id,
@@ -534,28 +599,31 @@ export const getOverview = (
       definition: 'First-to-last imported event interval. Session span includes idle and resumed gaps; it is not active agent time and is never summed.',
     },
     findings,
-    findingsLimitation: canShowAttention
-      ? findings.length === 0 ? 'No failure, rejection, or cancellation was reported for a normalized invocation in this range.' : null
-      : `Evidence-backed attention findings are hidden because tool-status coverage is ${dataHealth.toolStatusCoverage.numerator} of ${dataHealth.toolStatusCoverage.denominator}.`,
+    findingsLimitation: findings.length === 0
+      ? `No failures, rejections, or cancellations were reported in ${dataHealth.toolStatusCoverage.numerator} of ${dataHealth.toolStatusCoverage.denominator} invocations.`
+      : null,
     recentSessionRows: recentRows.map((session) => {
       const attention = attentionBySession.get(session.id)
-      if (!canShowAttention) return {
+      if (attention) return {
         ...session,
-        attentionStatus: 'coverage_limited' as const,
-        attentionReason: `Status coverage is ${dataHealth.toolStatusCoverage.numerator} of ${dataHealth.toolStatusCoverage.denominator}; attention classification is unavailable.`,
-        evidence: [],
-      }
-      return {
-        ...session,
-        attentionStatus: attention ? 'needs_attention' : 'no_observed_issue',
-        attentionReason: attention
-          ? `${attention.issueCount} reported tool issue${attention.issueCount === 1 ? '' : 's'}`
-          : 'No issue was reported in normalized tool status data.',
-        evidence: attention?.eventId ? [{
+        attentionStatus: 'needs_attention' as const,
+        attentionReason: `${attention.issueCount} reported tool issue${attention.issueCount === 1 ? '' : 's'}`,
+        evidence: attention.eventId ? [{
           eventId: attention.eventId,
           sessionId: attention.sessionId,
-          label: 'View reported issue',
+          label: 'Open event',
         }] : [],
+      }
+      return canShowAttention ? {
+        ...session,
+        attentionStatus: 'no_observed_issue' as const,
+        attentionReason: 'No issue was reported in normalized tool status data.',
+        evidence: [],
+      } : {
+        ...session,
+        attentionStatus: 'coverage_limited' as const,
+        attentionReason: `Status coverage is ${dataHealth.toolStatusCoverage.numerator} of ${dataHealth.toolStatusCoverage.denominator}; no general conclusion is available.`,
+        evidence: [],
       }
     }),
     dataHealth,
@@ -719,23 +787,12 @@ export const getDiagnostics = (database: TurnscopeDatabase): DiagnosticsResponse
   }
 }
 
-const toolCategoryLabels: Record<ToolCategory, string> = {
-  terminal: 'Terminal',
-  file_read: 'File read',
-  file_change: 'File change',
-  search: 'Search',
-  web: 'Web',
-  browser: 'Browser',
-  subagent: 'Subagent',
-  mcp: 'MCP tool',
-  other: 'Other tool',
-}
-
 interface ToolHealthRow {
   id: string
   sessionId: string
   category: ToolCategory
   rawName: string | null
+  sourceStatus: string | null
   signature: string | null
   status: 'success' | 'failure' | 'rejected' | 'cancelled' | null
   durationMs: number | null
@@ -757,6 +814,7 @@ export const getToolHealth = (
       ti.session_id AS sessionId,
       ti.category,
       ti.raw_tool_name AS rawName,
+      ti.raw_status AS sourceStatus,
       ti.signature,
       ti.status,
       ti.duration_ms AS durationMs,
@@ -788,6 +846,10 @@ export const getToolHealth = (
     }
     const repeats = [...signatureGroups.values()].reduce((sum, count) => sum + Math.max(0, count - 1), 0)
     const timings = invocations.map(({ durationMs }) => durationMs)
+    const rawNameCounts = new Map<string, number>()
+    for (const { rawName } of invocations) {
+      if (rawName) rawNameCounts.set(rawName, (rawNameCounts.get(rawName) ?? 0) + 1)
+    }
     const evidence = invocations
       .sort((left, right) => {
         const leftIssue = left.status === 'failure' || left.status === 'rejected' || left.status === 'cancelled' ? 1 : 0
@@ -799,11 +861,19 @@ export const getToolHealth = (
         eventId: row.evidenceEventId,
         sessionId: row.sessionId,
         label: `${row.sessionTitle} · ${row.rawName ?? toolCategoryLabels[category]}`,
+        sessionTitle: row.sessionTitle,
+        rawToolName: row.rawName,
+        sourceStatus: row.sourceStatus,
+        status: row.status,
+        occurredAt: row.occurredAt,
       }])
     return {
       id: `tool-${category}`,
       category,
       label: toolCategoryLabels[category],
+      rawNames: [...rawNameCounts.entries()]
+        .map(([name, invocationCount]) => ({ name, invocations: invocationCount }))
+        .sort((left, right) => right.invocations - left.invocations || left.name.localeCompare(right.name)),
       uniqueInvocations: invocations.length,
       statusCoverage: coverage({
         numerator: knownStatuses.length,

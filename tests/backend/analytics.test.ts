@@ -342,6 +342,10 @@ describe('tool health coverage', () => {
     })
     expect(health.categories[0]).toMatchObject({
       category: 'terminal',
+      rawNames: [
+        { name: 'command', invocations: 1 },
+        { name: 'exec', invocations: 1 },
+      ],
       uniqueInvocations: 2,
       successfulInvocations: 0,
       failedInvocations: 1,
@@ -357,8 +361,8 @@ describe('tool health coverage', () => {
   })
 })
 
-describe('attention findings', () => {
-  it('hides findings below the status-coverage threshold and links evidence once coverage is sufficient', () => {
+describe('observed friction', () => {
+  it('keeps direct findings visible under partial coverage and links exact evidence', () => {
     const database = openDatabase({ path: ':memory:' })
     database.prepare(`INSERT INTO product_installations (
       id, product, source_root, adapter_version, compatibility
@@ -383,8 +387,8 @@ describe('attention findings', () => {
       status, occurred_at, status_event_id, pairing_state
     ) VALUES (?, 'installation', 'session', ?, 'terminal', 'command', ?,
       '2026-09-01T10:00:00Z', ?, 'single_record')`)
-    for (let index = 1; index <= 4; index += 1) {
-      const status = index === 1 ? 'failure' : null
+    for (let index = 1; index <= 5; index += 1) {
+      const status = index === 1 || index === 5 ? 'failure' : null
       insertRecord.run(`source-${index}`, `one.jsonl#${index}`, index)
       insertEvent.run(`event-${index}`, `source-${index}`, index, status)
       insertInvocation.run(`tool-${index}`, `source-tool-${index}`, status, status ? `event-${index}` : null)
@@ -394,11 +398,20 @@ describe('attention findings', () => {
     const lowCoverage = getOverview(database, { range: 'all' }, now)
     expect(lowCoverage.sessionsNeedingAttention.value).toBeNull()
     expect(lowCoverage.sessionsNeedingAttention.evidence).toEqual([])
-    expect(lowCoverage.findings).toEqual([])
-    expect(lowCoverage.findingsLimitation).toContain('1 of 4')
+    expect(lowCoverage.findings).toHaveLength(1)
+    expect(lowCoverage.findings[0]).toMatchObject({
+      sessionTitle: 'Needs review',
+      toolCategory: 'terminal',
+      toolLabel: 'Terminal',
+      status: 'failure',
+      measurementClass: 'direct',
+      evidence: [{ eventId: 'event-1', sessionId: 'session' }],
+    })
+    expect(lowCoverage.findingsLimitation).toBeNull()
     expect(lowCoverage.recentSessionRows[0]).toMatchObject({
-      attentionStatus: 'coverage_limited',
-      evidence: [],
+      attentionStatus: 'needs_attention',
+      attentionReason: '2 reported tool issues',
+      evidence: [{ eventId: 'event-1', sessionId: 'session' }],
     })
 
     database.prepare(`UPDATE tool_invocations
