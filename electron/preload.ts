@@ -16,6 +16,17 @@ const api: TurnscopeDesktopApi = {
   getImportStatus: () => ipcRenderer.invoke(turnscopeIpcChannels.getImportStatus),
   startImport: () => ipcRenderer.invoke(turnscopeIpcChannels.startImport),
   cancelImport: () => ipcRenderer.invoke(turnscopeIpcChannels.cancelImport),
+  getImportedTheme: () => ipcRenderer.invoke(turnscopeIpcChannels.getImportedTheme),
+  importVsCodeTheme: () => ipcRenderer.invoke(turnscopeIpcChannels.importVsCodeTheme),
+  searchOpenVsxThemes: query =>
+    ipcRenderer.invoke(turnscopeIpcChannels.searchOpenVsxThemes, query),
+  importOpenVsxTheme: (extensionId, preferredAppearance) =>
+    ipcRenderer.invoke(
+      turnscopeIpcChannels.importOpenVsxTheme,
+      extensionId,
+      preferredAppearance,
+    ),
+  removeImportedTheme: () => ipcRenderer.invoke(turnscopeIpcChannels.removeImportedTheme),
   updateCorrection: async (correctionId, override) => {
     await ipcRenderer.invoke(turnscopeIpcChannels.updateCorrection, correctionId, override)
   },

@@ -1,18 +1,11 @@
 <template>
-  <div class="app-shell">
+  <div class="app-shell bg-ui-bg text-ui-text">
     <header class="app-header">
       <RouterLink class="brand" :to="{ name: 'overview' }">Turnscope</RouterLink>
       <nav aria-label="Primary navigation">
         <RouterLink :to="{ name: 'overview' }">Overview</RouterLink>
         <RouterLink :to="{ name: 'patterns' }">Patterns</RouterLink>
-        <label class="theme-control">
-          <span>Theme</span>
-          <select v-model="preference" aria-label="Color theme">
-            <option value="system">System</option>
-            <option value="light">Light</option>
-            <option value="dark">Dark</option>
-          </select>
-        </label>
+        <RouterLink :to="{ name: 'settings' }">Settings</RouterLink>
       </nav>
     </header>
 
@@ -23,9 +16,10 @@
 </template>
 
 <script setup lang="ts">
+import { provide } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 
-import { useTheme } from './theme'
+import { themeKey, useTheme } from './theme'
 
-const { preference } = useTheme()
+provide(themeKey, useTheme())
 </script>

@@ -1,6 +1,10 @@
 import { join } from 'node:path'
 
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import {
+  createOpenVsxThemeService,
+  type OpenVsxThemeService,
+} from '@filipgutica/ui/open-vsx'
+import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
 
 import type { TurnscopeApi } from '../shared/api.js'
 import type {
@@ -14,12 +18,18 @@ import { closeDatabase, openDatabase, type TurnscopeDatabase } from '../src/db.j
 import { createLocalApi } from '../src/local-api.js'
 import { defaultDatabasePath } from '../src/paths.js'
 import { createImportManager, type ImportManager } from './import-manager.js'
+import { createThemeImportService, type ThemeImportService } from './theme-import.js'
 
 let database: TurnscopeDatabase | undefined
 let importManager: ImportManager | undefined
 
 const requireString = (value: unknown): string => {
   if (typeof value !== 'string') throw new TypeError('Expected a string identifier')
+  return value
+}
+
+const requirePreferredAppearance = (value: unknown): 'light' | 'dark' => {
+  if (value !== 'light' && value !== 'dark') throw new TypeError('Expected a theme appearance')
   return value
 }
 
@@ -32,7 +42,12 @@ const isSafeExternalUrl = (targetUrl: string): boolean => {
   }
 }
 
-const registerIpcHandlers = (api: TurnscopeApi, manager: ImportManager): void => {
+const registerIpcHandlers = (
+  api: TurnscopeApi,
+  manager: ImportManager,
+  themeService: ThemeImportService,
+  openVsxThemeService: OpenVsxThemeService,
+): void => {
   ipcMain.handle(turnscopeIpcChannels.getDiagnostics, () => api.getDiagnostics())
   ipcMain.handle(turnscopeIpcChannels.getOverview, () => api.getOverview())
   ipcMain.handle(turnscopeIpcChannels.getProject, (
@@ -51,6 +66,21 @@ const registerIpcHandlers = (api: TurnscopeApi, manager: ImportManager): void =>
   ipcMain.handle(turnscopeIpcChannels.getImportStatus, () => manager.getStatus())
   ipcMain.handle(turnscopeIpcChannels.startImport, () => manager.start())
   ipcMain.handle(turnscopeIpcChannels.cancelImport, () => manager.cancel())
+  ipcMain.handle(turnscopeIpcChannels.getImportedTheme, () => themeService.getImportedTheme())
+  ipcMain.handle(turnscopeIpcChannels.importVsCodeTheme, () => themeService.importTheme())
+  ipcMain.handle(turnscopeIpcChannels.searchOpenVsxThemes, (_event, query: unknown) =>
+    openVsxThemeService.search(requireString(query)))
+  ipcMain.handle(
+    turnscopeIpcChannels.importOpenVsxTheme,
+    async (_event, extensionId: unknown, preferredAppearance: unknown) => {
+      const result = await openVsxThemeService.importTheme(
+        requireString(extensionId),
+        requirePreferredAppearance(preferredAppearance),
+      )
+      return result.status === 'success' ? themeService.saveTheme(result.theme) : result
+    },
+  )
+  ipcMain.handle(turnscopeIpcChannels.removeImportedTheme, () => themeService.removeImportedTheme())
   ipcMain.handle(
     turnscopeIpcChannels.updateCorrection,
     (_event, correctionId: unknown, override: CorrectionOverrideInput) =>
@@ -74,7 +104,7 @@ const createWindow = (): BrowserWindow => {
     height: 960,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: '#f4f1ea',
+    backgroundColor: '#eff1f5',
     show: false,
     title: 'Turnscope',
     webPreferences: {
@@ -107,7 +137,28 @@ const createWindow = (): BrowserWindow => {
 app.whenReady().then(() => {
   database = openDatabase({ path: defaultDatabasePath() })
   importManager = createImportManager()
-  registerIpcHandlers(createLocalApi({ database }), importManager)
+  const themeService = createThemeImportService({
+    pickThemeFile: async () => {
+      const options: OpenDialogOptions = {
+        title: 'Import VS Code theme',
+        buttonLabel: 'Import theme',
+        properties: ['openFile'],
+        filters: [{ name: 'VS Code color themes', extensions: ['json', 'jsonc'] }],
+      }
+      const parent = BrowserWindow.getFocusedWindow()
+      const result = parent
+        ? await dialog.showOpenDialog(parent, options)
+        : await dialog.showOpenDialog(options)
+      return result.canceled ? null : result.filePaths[0] ?? null
+    },
+    storagePath: join(app.getPath('userData'), 'imported-theme.json'),
+  })
+  registerIpcHandlers(
+    createLocalApi({ database }),
+    importManager,
+    themeService,
+    createOpenVsxThemeService(),
+  )
   createWindow()
 
   app.on('activate', () => {

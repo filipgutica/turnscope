@@ -1,10 +1,10 @@
 <template>
-  <article class="metric-card">
+  <UiSurface as="article" class="metric-card" padding="default">
     <div class="metric-card__heading">
       <h2>{{ label }}</h2>
-      <span class="measurement-class" :data-class="metric.measurementClass">
+      <UiBadge :tone="metric.measurementClass === 'inferred' ? 'warning' : 'neutral'">
         {{ measurementLabel }}
-      </span>
+      </UiBadge>
     </div>
     <p v-if="metric.value !== null" class="metric-card__value">{{ formattedValue }}</p>
     <div v-else class="metric-card__missing">
@@ -28,12 +28,14 @@
         </li>
       </ul>
     </details>
-  </article>
+  </UiSurface>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+
+import { UiBadge, UiSurface } from '@filipgutica/ui'
 
 import type { MetricValue } from '@shared/contracts'
 

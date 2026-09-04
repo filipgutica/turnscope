@@ -3,10 +3,10 @@
     <RouterLink class="back-link" :to="{ name: 'overview' }">← Back to overview</RouterLink>
 
     <p v-if="loading" class="status-message">Loading project…</p>
-    <div v-else-if="error" class="error-message" role="alert">
+    <UiAlert v-else-if="error" class="error-message" tone="danger">
       <p>{{ error }}</p>
-      <button type="button" @click="loadProject">Retry</button>
-    </div>
+      <UiButton @click="loadProject">Retry</UiButton>
+    </UiAlert>
     <template v-else-if="detail">
       <header class="page-heading">
         <div>
@@ -14,31 +14,31 @@
           <h1>{{ detail.project.name }}</h1>
           <p class="path-text">{{ detail.project.repository ?? 'Repository not reported' }}</p>
         </div>
-        <button type="button" class="secondary-button" :disabled="loading" @click="loadProject">
+        <UiButton variant="secondary" :loading="loading" @click="loadProject">
           Refresh
-        </button>
+        </UiButton>
       </header>
 
       <div class="project-stat-grid" aria-label="Project summary">
-        <article>
+        <UiSurface as="article" padding="compact">
           <span>Sessions</span>
           <strong>{{ detail.project.sessionCount }}</strong>
-        </article>
-        <article>
+        </UiSurface>
+        <UiSurface as="article" padding="compact">
           <span>Events</span>
           <strong>{{ detail.project.eventCount }}</strong>
-        </article>
-        <article>
+        </UiSurface>
+        <UiSurface as="article" padding="compact">
           <span>Corrections</span>
           <strong>{{ detail.project.corrections }}</strong>
-        </article>
-        <article>
+        </UiSurface>
+        <UiSurface as="article" padding="compact">
           <span>Errors</span>
           <strong>{{ detail.project.errors }}</strong>
-        </article>
+        </UiSurface>
       </div>
 
-      <section class="panel">
+      <UiSurface class="panel" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Project activity</p>
@@ -60,21 +60,19 @@
           @load-more="loadMore"
         >
           <template #toolbar>
-            <label class="search-control">
-              <span>Search sessions</span>
-              <input v-model="search" type="search" placeholder="Title or model" aria-label="Search sessions" />
-            </label>
-            <label class="filter-control">
-              <span>Show</span>
-              <select v-model="issue" aria-label="Session issue filter">
+            <UiField control-id="session-search" class="search-control" label="Search sessions">
+              <UiInput id="session-search" v-model="search" type="search" placeholder="Title or model" />
+            </UiField>
+            <UiField control-id="session-issue" class="filter-control" label="Show">
+              <UiSelect id="session-issue" :model-value="issue" @update:model-value="setIssue">
                 <option value="">All sessions</option>
                 <option value="corrections">With corrections</option>
                 <option value="errors">With errors</option>
-              </select>
-            </label>
+              </UiSelect>
+            </UiField>
           </template>
         </VirtualDataTable>
-      </section>
+      </UiSurface>
     </template>
   </section>
 </template>
@@ -82,6 +80,8 @@
 <script setup lang="ts">
 import { computed, h, inject, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+
+import { UiAlert, UiButton, UiField, UiInput, UiSelect, UiSurface } from '@filipgutica/ui'
 
 import type { ProjectDetailResponse, ProjectSessionsQuery, SessionSummary } from '@shared/contracts'
 
@@ -101,9 +101,13 @@ const loading = ref(false)
 const loadingMore = ref(false)
 const error = ref<string | null>(null)
 const search = ref('')
-const issue = ref<ProjectSessionsQuery['issue'] | ''>('')
+const issue = ref<NonNullable<ProjectSessionsQuery['issue']> | ''>('')
 const projectId = computed(() => String(route.params.id))
 let requestId = 0
+
+const setIssue = (value: string): void => {
+  if (value === '' || value === 'corrections' || value === 'errors') issue.value = value
+}
 
 const sessionColumns: DataTableColumn<SessionSummary>[] = [
   {

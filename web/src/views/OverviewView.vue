@@ -6,23 +6,16 @@
         <h1>Overview</h1>
         <p>Health and activity across all imported projects.</p>
       </div>
-      <button type="button" class="secondary-button" :disabled="loading" @click="loadOverview">
+      <UiButton variant="secondary" :loading="loading" @click="loadOverview">
         Refresh
-      </button>
+      </UiButton>
     </header>
 
-    <ImportStatusPanel
-      v-if="importStatus"
-      :status="importStatus"
-      @start="startImport"
-      @cancel="cancelImport"
-    />
-
     <p v-if="loading" class="status-message">Loading overview…</p>
-    <div v-else-if="error" class="error-message" role="alert">
+    <UiAlert v-else-if="error" class="error-message" tone="danger">
       <p>{{ error }}</p>
-      <button type="button" @click="loadOverview">Retry</button>
-    </div>
+      <UiButton @click="loadOverview">Retry</UiButton>
+    </UiAlert>
     <template v-else-if="overview">
       <div class="metric-grid metric-grid--summary">
         <MetricCard label="Projects" :metric="overview.projects" />
@@ -31,7 +24,7 @@
         <MetricCard label="Errors" :metric="overview.errors" />
       </div>
 
-      <details class="panel metric-details">
+      <UiSurface as="details" class="panel metric-details" padding="none">
         <summary>Usage and quality details</summary>
         <div class="metric-grid metric-grid--details">
           <MetricCard label="Input tokens" :metric="overview.inputTokens" />
@@ -41,9 +34,9 @@
           <MetricCard label="Duration" :metric="overview.duration" />
           <MetricCard label="Correction rate" :metric="overview.correctionRate" />
         </div>
-      </details>
+      </UiSurface>
 
-      <section class="panel">
+      <UiSurface class="panel" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Imported data</p>
@@ -63,25 +56,25 @@
           label="Projects"
         >
           <template #toolbar>
-            <label class="search-control">
-              <span>Search projects</span>
-              <input v-model="projectSearch" type="search" placeholder="Name or repository" aria-label="Search projects" />
-            </label>
+            <UiField control-id="project-search" class="search-control" label="Search projects">
+              <UiInput id="project-search" v-model="projectSearch" type="search" placeholder="Name or repository" />
+            </UiField>
           </template>
         </VirtualDataTable>
-      </section>
+      </UiSurface>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, h, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, h, inject, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
-import type { ImportJobStatus, OverviewResponse, ProjectSummary } from '@shared/contracts'
+import { UiAlert, UiButton, UiField, UiInput, UiSurface } from '@filipgutica/ui'
+
+import type { OverviewResponse, ProjectSummary } from '@shared/contracts'
 
 import { apiKey } from '../api'
-import ImportStatusPanel from '../components/ImportStatusPanel.vue'
 import MetricCard from '../components/MetricCard.vue'
 import VirtualDataTable from '../components/VirtualDataTable.vue'
 import { formatDate } from '../format'
@@ -95,12 +88,7 @@ if (!api) {
 const overview = ref<OverviewResponse | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const importStatus = ref<ImportJobStatus | null>(null)
 const projectSearch = ref('')
-const importApi = api.getImportStatus && api.startImport && api.cancelImport
-  ? { getStatus: api.getImportStatus, start: api.startImport, cancel: api.cancelImport }
-  : null
-let importPollTimer: ReturnType<typeof setTimeout> | undefined
 
 const filteredProjects = computed(() => {
   const query = projectSearch.value.trim().toLocaleLowerCase()
@@ -138,65 +126,5 @@ const loadOverview = async (): Promise<void> => {
   }
 }
 
-const scheduleImportPoll = (): void => {
-  if (importStatus.value?.state !== 'running') return
-  importPollTimer = setTimeout(refreshImportStatus, 500)
-}
-
-const refreshImportStatus = async (): Promise<void> => {
-  if (!importApi) return
-  const previousState = importStatus.value?.state
-  try {
-    importStatus.value = await importApi.getStatus()
-    if (previousState === 'running' && importStatus.value.state !== 'running') {
-      await loadOverview()
-    }
-  } catch (cause) {
-    if (importStatus.value) {
-      importStatus.value = {
-        ...importStatus.value,
-        state: 'failed',
-        phase: null,
-        completedAt: new Date().toISOString(),
-        error: cause instanceof Error ? cause.message : 'Unable to read import status',
-      }
-    }
-  } finally {
-    scheduleImportPoll()
-  }
-}
-
-const startImport = async (): Promise<void> => {
-  if (!importApi) return
-  if (importPollTimer) clearTimeout(importPollTimer)
-  try {
-    importStatus.value = await importApi.start()
-  } catch (cause) {
-    if (importStatus.value) {
-      importStatus.value = {
-        ...importStatus.value,
-        state: 'failed',
-        phase: null,
-        completedAt: new Date().toISOString(),
-        error: cause instanceof Error ? cause.message : 'Unable to start import',
-      }
-    }
-  }
-  scheduleImportPoll()
-}
-
-const cancelImport = async (): Promise<void> => {
-  if (!importApi) return
-  if (importPollTimer) clearTimeout(importPollTimer)
-  importStatus.value = await importApi.cancel()
-  await loadOverview()
-}
-
-onMounted(() => {
-  void loadOverview()
-  void refreshImportStatus()
-})
-onUnmounted(() => {
-  if (importPollTimer) clearTimeout(importPollTimer)
-})
+onMounted(loadOverview)
 </script>

@@ -1,27 +1,15 @@
 <template>
-  <div v-if="sourceRecordId" class="evidence-overlay" @click.self="emit('close')">
-    <section
-      ref="panel"
-      class="evidence-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="evidence-title"
-      tabindex="-1"
-      @keydown.esc="emit('close')"
-    >
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">Raw provenance</p>
-          <h2 id="evidence-title">Evidence</h2>
-        </div>
-        <button type="button" class="secondary-button" @click="emit('close')">Close</button>
-      </div>
-
+  <UiDialog
+    :open="Boolean(sourceRecordId)"
+    title="Evidence"
+    description="Raw imported source record"
+    @update:open="onOpenChange"
+  >
       <p v-if="loading" class="status-message">Loading evidence…</p>
-      <div v-else-if="error" class="error-message" role="alert">
+      <UiAlert v-else-if="error" class="error-message" tone="danger">
         <p>{{ error }}</p>
-        <button type="button" @click="loadEvidence">Retry</button>
-      </div>
+        <UiButton @click="loadEvidence">Retry</UiButton>
+      </UiAlert>
       <div v-else-if="evidence" class="evidence-content">
         <dl class="detail-list">
           <div>
@@ -39,12 +27,13 @@
         </dl>
         <pre>{{ formattedPayload }}</pre>
       </div>
-    </section>
-  </div>
+  </UiDialog>
 </template>
 
 <script setup lang="ts">
-import { computed, inject, nextTick, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
+
+import { UiAlert, UiButton, UiDialog } from '@filipgutica/ui'
 
 import type { SourceEvidenceResponse } from '@shared/contracts'
 
@@ -62,9 +51,12 @@ if (!api) {
 }
 
 const evidence = ref<SourceEvidenceResponse | null>(null)
-const panel = ref<HTMLElement | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+
+const onOpenChange = (open: boolean): void => {
+  if (!open) emit('close')
+}
 
 const formattedPayload = computed(() =>
   evidence.value === null ? '' : JSON.stringify(evidence.value.redactedPayload, null, 2),
@@ -90,11 +82,7 @@ const loadEvidence = async (): Promise<void> => {
 
 watch(
   () => sourceRecordId,
-  async () => {
-    await nextTick()
-    panel.value?.focus()
-    await loadEvidence()
-  },
-  { immediate: true, flush: 'post' },
+  loadEvidence,
+  { immediate: true },
 )
 </script>

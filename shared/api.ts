@@ -1,4 +1,11 @@
 import type {
+  NormalizedTheme,
+  OpenVsxThemeSearchResult,
+  ThemeImportResult,
+  ThemeRemovalResult,
+} from '@filipgutica/ui/theme'
+
+import type {
   CorrectionOverrideInput,
   DiagnosticsResponse,
   ImportJobStatus,
@@ -30,4 +37,15 @@ export interface TurnscopeImportApi {
   cancelImport: () => Promise<ImportJobStatus>
 }
 
-export type TurnscopeDesktopApi = TurnscopeApi & TurnscopeImportApi
+export interface TurnscopeThemeApi {
+  getImportedTheme: () => Promise<NormalizedTheme | null>
+  importVsCodeTheme: () => Promise<ThemeImportResult>
+  searchOpenVsxThemes: (query: string) => Promise<OpenVsxThemeSearchResult>
+  importOpenVsxTheme: (
+    extensionId: string,
+    preferredAppearance: 'light' | 'dark',
+  ) => Promise<ThemeImportResult>
+  removeImportedTheme: () => Promise<ThemeRemovalResult>
+}
+
+export type TurnscopeDesktopApi = TurnscopeApi & TurnscopeImportApi & TurnscopeThemeApi
