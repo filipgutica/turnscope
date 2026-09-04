@@ -1,8 +1,8 @@
 # Turnscope
 
-Turnscope is a local-first proof of concept for development-agent observability. The first adapter imports local Codex rollout sessions read-only, preserves redacted source provenance, normalizes evidence into SQLite, and presents a local dashboard for usage, corrections, failures, and session drill-down.
+Turnscope is a local-first proof of concept for development-agent observability. The first adapter imports local Codex rollout sessions read-only, preserves redacted source provenance, normalizes evidence into SQLite, and presents tool usage, directly reported friction, and session evidence.
 
-This repository uses **agent observability** as the working product description. The POC does not make causal claims or treat diagnostic signals as automatic judgments.
+The [product and experience specification](./SPEC.md) defines the user promise, information architecture, data language, and release requirements. The POC does not make causal claims or treat diagnostic signals as automatic judgments.
 
 ## POC boundary
 
@@ -11,7 +11,7 @@ Included:
 - Codex product discovery and a version-gated `0.152.x` rollout adapter
 - Background, incremental JSONL import with live progress and stable source and event identities
 - SQLite storage with cascade deletion, success/failure import audits, and gzipped redacted provenance
-- Direct token/cache/error measurements, derived duration/cache ratio, and inferred correction taxonomy
+- Direct token/cache/error measurements, session-span percentiles, and diagnostic correction candidates
 - One explainable detector for repeated failing tool calls
 - Electron desktop shell and a Vue session/pattern dashboard, with a bearer-protected Fastify fallback
 - User overrides for detected or missed correction labels and diagnostic signals
@@ -69,7 +69,7 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` starts the Vue development server and opens Turnscope in Electron. Use **Import Codex sessions** on the Overview page to start or resume an incremental import. Progress and warnings remain visible while the importer runs in a worker thread, so navigation stays responsive. **Stop import** safely rolls back only the active file; a later resume skips completed files. It does not require a second API process, a browser URL, or a bearer token.
+`pnpm dev` starts the Vue development server and opens Turnscope in Electron. Use **Import Codex sessions** in Settings to start or resume an incremental import. Progress and warnings remain visible while the importer runs in a worker thread, so navigation stays responsive. **Stop import** safely rolls back only the active file; a later resume skips completed files. It does not require a second API process, a browser URL, or a bearer token.
 
 The CLI remains available for diagnostics and custom paths:
 
@@ -118,9 +118,9 @@ Tests never call model APIs and use only sanitized fixtures. A manual real-sessi
 
 ## Measurement contract
 
-- **Direct:** values reported by source records, including input, cached-input, and output tokens, timestamps, event counts, tool failures, model identifiers, and correction evidence events. Missing source values remain `null`.
-- **Derived:** deterministic formulas. Cache ratio is `cached_input_tokens / input_tokens` when both are present and input is positive. Correction rate is agent-mistake corrections plus unproductive-steering turns, divided by all user turns; approvals, clarifications, new requirements, product decisions, preferences, and cancellations remain classified but are not counted as agent failures. Total session duration is the sum of each complete `ended_at - started_at` span; if any session lacks a complete span, the aggregate is missing. Percentiles use sorted inclusive linear interpolation at `(n - 1) × p`.
-- **Inferred:** correction categories and detrimental-pattern signals. Each inference includes confidence, an explanation, and supporting event identifiers. The session drill-down lets the user edit detected corrections, add a missed correction to a user event, and dismiss or restore a diagnostic signal. Overrides are stored beside immutable source provenance and survive reimport.
+- **Direct:** values reported by source records, including input, cached-input, and output tokens, timestamps, normalized tool statuses, model identifiers, and source evidence. Missing source values remain `null`.
+- **Derived:** documented deterministic formulas over direct evidence. Every displayed rate includes its numerator and denominator. Session span is the first-to-last imported event interval for one session; it is not active time and is never summed across sessions. Percentiles use sorted inclusive linear interpolation at `(n - 1) × p`.
+- **Inferred:** correction candidates and other heuristic signals remain explicitly diagnostic. They never drive primary findings or automatic quality judgments. The session drill-down preserves supporting event identifiers and immutable source provenance.
 - **Causal:** none. Skill and outcome comparisons are deferred until matched or controlled evaluation designs exist.
 
 ## Security and compatibility limits

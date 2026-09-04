@@ -3,6 +3,7 @@ import { gunzipSync } from 'node:zlib'
 import type { TurnscopeApi } from '../shared/api.js'
 import type {
   CorrectionOverrideInput,
+  AnalyticsRangeQuery,
   ProjectSessionsQuery,
   SessionTimelineQuery,
   SignalOverrideInput,
@@ -12,6 +13,7 @@ import { correctionCategories } from '../shared/corrections.js'
 import {
   getDiagnostics,
   getOverview,
+  getToolHealth,
   getProjectDetail,
   getSessionDetail,
   listPatterns,
@@ -32,6 +34,17 @@ export class LocalApiError extends Error {
 const correctionCategorySet = new Set<string>(correctionCategories)
 const timelineActors = new Set(['user', 'agent', 'tool', 'system'])
 const projectIssues = new Set(['corrections', 'errors'])
+const analyticsRanges = new Set(['7d', '30d', 'all'])
+
+const requireAnalyticsQuery = (value: unknown): AnalyticsRangeQuery => {
+  const query = requirePageQuery(value)
+  if (query.range !== undefined && (typeof query.range !== 'string' || !analyticsRanges.has(query.range))) {
+    throw new LocalApiError('Invalid analytics range', 400)
+  }
+  return query.range === '7d' || query.range === '30d' || query.range === 'all'
+    ? { range: query.range }
+    : {}
+}
 
 const requireId = (value: unknown): string => {
   if (typeof value !== 'string' || value.length === 0) {
@@ -138,7 +151,8 @@ const requireTimelineQuery = (value: unknown): SessionTimelineQuery => {
 
 export const createLocalApi = ({ database }: { database: TurnscopeDatabase }): TurnscopeApi => ({
   getDiagnostics: async () => getDiagnostics(database),
-  getOverview: async () => getOverview(database),
+  getOverview: async (query) => getOverview(database, requireAnalyticsQuery(query)),
+  getToolHealth: async (query) => getToolHealth(database, requireAnalyticsQuery(query)),
   getProject: async (projectId, query) => {
     const detail = getProjectDetail({
       database,

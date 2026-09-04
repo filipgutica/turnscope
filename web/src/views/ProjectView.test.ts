@@ -65,7 +65,7 @@ describe('ProjectView', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', name: 'overview', component: { template: '<div />' } },
+        { path: '/', name: 'activity', component: { template: '<div />' } },
         { path: '/projects/:id', name: 'project', component: ProjectView },
         { path: '/sessions/:id', name: 'session', component: { template: '<div />' } },
       ],

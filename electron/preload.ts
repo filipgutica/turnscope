@@ -5,7 +5,8 @@ import { turnscopeIpcChannels } from '../shared/ipc.js'
 
 const api: TurnscopeDesktopApi = {
   getDiagnostics: () => ipcRenderer.invoke(turnscopeIpcChannels.getDiagnostics),
-  getOverview: () => ipcRenderer.invoke(turnscopeIpcChannels.getOverview),
+  getOverview: query => ipcRenderer.invoke(turnscopeIpcChannels.getOverview, query),
+  getToolHealth: query => ipcRenderer.invoke(turnscopeIpcChannels.getToolHealth, query),
   getProject: (projectId, query) =>
     ipcRenderer.invoke(turnscopeIpcChannels.getProject, projectId, query),
   getPatterns: () => ipcRenderer.invoke(turnscopeIpcChannels.getPatterns),

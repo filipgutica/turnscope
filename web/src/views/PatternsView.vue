@@ -17,16 +17,11 @@
       <UiButton @click="loadDiagnostics">Retry</UiButton>
     </UiAlert>
     <template v-else-if="diagnostics">
-      <section class="metric-grid" aria-label="Diagnostic overview">
+      <section class="diagnostic-metrics" aria-label="Diagnostic overview">
         <UiSurface as="article" class="metric-card" padding="default">
           <span>Counted corrections</span>
           <strong>{{ formatNumber(diagnostics.countedCorrections) }}</strong>
           <small>{{ formatNumber(diagnostics.correctionCandidates) }} heuristic candidates</small>
-        </UiSurface>
-        <UiSurface as="article" class="metric-card" padding="default">
-          <span>Failed tool events</span>
-          <strong>{{ formatNumber(diagnostics.failedToolEvents) }}</strong>
-          <small>Directly reported failed or error status</small>
         </UiSurface>
         <UiSurface as="article" class="metric-card" padding="default">
           <span>Token coverage</span>
@@ -47,10 +42,12 @@
             <h2>Where did the agent need steering?</h2>
           </div>
         </div>
-        <p>
-          Heuristic candidates include approvals and product decisions. Only agent mistakes and
-          unproductive steering count as corrections by default; a user override always wins.
-        </p>
+        <div class="panel-copy">
+          <p>
+            Heuristic candidates include approvals and product decisions. Only agent mistakes and
+            unproductive steering count as corrections by default; a user override always wins.
+          </p>
+        </div>
         <VirtualDataTable
           :rows="diagnostics.correctionCategories"
           :columns="correctionColumns"
@@ -59,33 +56,13 @@
         />
       </UiSurface>
 
-      <UiSurface class="panel diagnostic-section" padding="none">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Tool reliability</p>
-            <h2>Which tool categories fail most often?</h2>
-          </div>
-        </div>
-        <p>
-          These are direct failed or error statuses from imported events. They show where to
-          investigate, not whether the agent caused the underlying failure.
-        </p>
-        <VirtualDataTable
-          v-if="diagnostics.toolFailures.length > 0"
-          :rows="diagnostics.toolFailures"
-          :columns="toolColumns"
-          :total="diagnostics.toolFailures.length"
-          label="Tool failure categories"
-        />
-        <p v-else class="empty-state">No failed tool events were imported.</p>
-      </UiSurface>
-
       <section class="question-grid">
         <UiSurface as="article" class="panel diagnostic-section" padding="default">
           <p class="eyebrow">Token efficiency</p>
           <h2>Can we identify wasted tokens?</h2>
           <strong class="diagnostic-answer">Not reliably yet</strong>
           <UiProgress
+            v-if="diagnostics.tokenCoverage.totalSessions > 0"
             class="coverage-progress"
             label="Token usage coverage"
             :max="Math.max(1, diagnostics.tokenCoverage.totalSessions)"
@@ -169,12 +146,7 @@ import { RouterLink, type RouteLocationRaw } from 'vue-router'
 
 import { UiAlert, UiButton, UiProgress, UiSurface } from '@filipgutica/ui'
 
-import type {
-  CorrectionDiagnostic,
-  DiagnosticsResponse,
-  EvidenceRef,
-  ToolFailureDiagnostic,
-} from '@shared/contracts'
+import type { CorrectionDiagnostic, DiagnosticsResponse, EvidenceRef } from '@shared/contracts'
 
 import { apiKey } from '../api'
 import VirtualDataTable from '../components/VirtualDataTable.vue'
@@ -194,13 +166,12 @@ const formatNumber = (value: number): string => new Intl.NumberFormat().format(v
 const formatOptionalNumber = (value: number | null): string => value === null
   ? 'Not reported'
   : formatNumber(value)
-const formatPercent = (value: number): string => new Intl.NumberFormat(undefined, {
-  style: 'percent',
-  maximumFractionDigits: 1,
-}).format(value)
-const formatDuration = (value: number | null): string => value === null
+const formatPercent = (value: number | null): string => value === null
   ? 'Not reported'
-  : `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value)}ms`
+  : new Intl.NumberFormat(undefined, {
+      style: 'percent',
+      maximumFractionDigits: 1,
+    }).format(value)
 const evidenceTarget = (evidence: EvidenceRef): RouteLocationRaw => ({
   name: 'session',
   params: { id: evidence.sessionId },
@@ -221,19 +192,6 @@ const correctionColumns: DataTableColumn<CorrectionDiagnostic>[] = [
   { accessorKey: 'candidates', header: 'Candidates' },
   { accessorKey: 'countedCorrections', header: 'Counted' },
   { accessorKey: 'userOverrides', header: 'Overrides' },
-  { id: 'evidence', header: 'Evidence', cell: ({ row }) => evidenceCell(row.original.evidence) },
-]
-
-const toolColumns: DataTableColumn<ToolFailureDiagnostic>[] = [
-  { accessorKey: 'toolName', header: 'Tool category' },
-  { accessorKey: 'recordedEvents', header: 'Recorded events' },
-  { accessorKey: 'failures', header: 'Failures' },
-  { accessorKey: 'affectedSessions', header: 'Sessions' },
-  {
-    accessorKey: 'averageFailureDurationMs',
-    header: 'Avg. failed duration',
-    cell: ({ row }) => formatDuration(row.original.averageFailureDurationMs),
-  },
   { id: 'evidence', header: 'Evidence', cell: ({ row }) => evidenceCell(row.original.evidence) },
 ]
 

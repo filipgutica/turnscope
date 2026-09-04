@@ -7,6 +7,7 @@ import type {
 
 import type {
   CorrectionOverrideInput,
+  AnalyticsRangeQuery,
   DiagnosticsResponse,
   ImportJobStatus,
   OverviewResponse,
@@ -17,10 +18,12 @@ import type {
   SessionTimelineQuery,
   SignalOverrideInput,
   SourceEvidenceResponse,
+  ToolHealthResponse,
 } from './contracts.js'
 
 export interface TurnscopeApi {
-  getOverview: () => Promise<OverviewResponse>
+  getOverview: (query?: AnalyticsRangeQuery) => Promise<OverviewResponse>
+  getToolHealth: (query?: AnalyticsRangeQuery) => Promise<ToolHealthResponse>
   getProject: (projectId: string, query?: ProjectSessionsQuery) => Promise<ProjectDetailResponse>
   getSession: (sessionId: string, query?: SessionTimelineQuery) => Promise<SessionDetailResponse>
   getPatterns: () => Promise<PatternSignal[]>

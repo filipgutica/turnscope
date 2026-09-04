@@ -48,10 +48,26 @@ describe('createApiClient', () => {
     )
     const api = createApiClient({ token: 'secret', fetchImpl })
 
-    await api.getOverview()
+    await api.getOverview({ range: '7d' })
 
-    expect(fetchImpl).toHaveBeenCalledWith('/api/overview', {
+    expect(fetchImpl).toHaveBeenCalledWith('/api/overview?range=7d', {
       headers: { Authorization: 'Bearer secret' },
+    })
+  })
+
+  it('requests tool health for the selected range', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ categories: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const api = createApiClient({ token: null, fetchImpl })
+
+    await api.getToolHealth({ range: 'all' })
+
+    expect(fetchImpl).toHaveBeenCalledWith('/api/tool-health?range=all', {
+      headers: {},
     })
   })
 

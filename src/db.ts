@@ -217,6 +217,52 @@ const migration5 = `
     WHERE tool_status IN ('failed', 'error');
 `
 
+const migration6 = `
+  ALTER TABLE source_files ADD COLUMN adapter_version TEXT;
+  ALTER TABLE events ADD COLUMN tool_invocation_source_id TEXT;
+  ALTER TABLE events ADD COLUMN tool_phase TEXT
+    CHECK (tool_phase IN ('request', 'intermediate', 'result', 'completed') OR tool_phase IS NULL);
+  ALTER TABLE events ADD COLUMN tool_category TEXT;
+  ALTER TABLE events ADD COLUMN tool_raw_status TEXT;
+
+  CREATE TABLE IF NOT EXISTS tool_invocations (
+    id TEXT PRIMARY KEY,
+    installation_id TEXT NOT NULL REFERENCES product_installations(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    source_invocation_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    raw_tool_name TEXT,
+    signature TEXT,
+    status TEXT CHECK (status IN ('success', 'failure', 'rejected', 'cancelled') OR status IS NULL),
+    raw_status TEXT,
+    duration_ms INTEGER,
+    occurred_at TEXT,
+    status_event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+    timing_event_id TEXT REFERENCES events(id) ON DELETE SET NULL,
+    pairing_state TEXT NOT NULL CHECK (pairing_state IN ('paired', 'single_record', 'unpaired')),
+    UNIQUE (installation_id, session_id, source_invocation_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS tool_invocation_evidence (
+    invocation_id TEXT NOT NULL REFERENCES tool_invocations(id) ON DELETE CASCADE,
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    phase TEXT NOT NULL CHECK (phase IN ('request', 'intermediate', 'result', 'completed')),
+    PRIMARY KEY (invocation_id, event_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS tool_invocations_session
+    ON tool_invocations(session_id, occurred_at DESC);
+  CREATE INDEX IF NOT EXISTS tool_invocations_category_status
+    ON tool_invocations(category, status);
+  CREATE INDEX IF NOT EXISTS events_tool_invocation_source
+    ON events(session_id, tool_invocation_source_id);
+`
+
+const migration7 = `
+  ALTER TABLE source_files ADD COLUMN warnings_json TEXT NOT NULL DEFAULT '[]';
+  UPDATE source_files SET adapter_version = NULL;
+`
+
 const bootstrapSchema = `
   CREATE TABLE IF NOT EXISTS schema_migrations (
     version INTEGER PRIMARY KEY,
@@ -230,6 +276,8 @@ const migrations = [
   { version: 3, up: migration3 },
   { version: 4, up: migration4 },
   { version: 5, up: migration5 },
+  { version: 6, up: migration6 },
+  { version: 7, up: migration7 },
 ] as const
 const currentSchemaVersion = migrations.at(-1)?.version ?? 0
 

@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { parseVsCodeTheme } from '@filipgutica/ui/theme'
 import type { ImportJobStatus } from '@shared/contracts'
@@ -44,6 +44,7 @@ const idleImport: ImportJobStatus = {
 
 const api: ApiClient = {
   getOverview: async () => { throw new Error('Not used') },
+  getToolHealth: async () => { throw new Error('Not used') },
   getDiagnostics: async () => { throw new Error('Not used') },
   getProject: async () => { throw new Error('Not used') },
   getSession: async () => { throw new Error('Not used') },
@@ -78,8 +79,8 @@ const mountSettings = async ({
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/', name: 'overview', component: { template: '<div>Overview</div>' } },
-      { path: '/patterns', name: 'patterns', component: { template: '<div>Patterns</div>' } },
+      { path: '/', name: 'activity', component: { template: '<div>Activity</div>' } },
+      { path: '/settings/diagnostics', name: 'patterns', component: { template: '<div>Patterns</div>' } },
       { path: '/settings', name: 'settings', component: SettingsView },
     ],
   })
@@ -95,10 +96,26 @@ const mountSettings = async ({
   return wrapper
 }
 
-const buttonWithText = (wrapper: VueWrapper, label: string) =>
-  wrapper.findAll('button').find(button => button.text() === label)
+const buttonWithText = (wrapper: VueWrapper, label: string) => {
+  const localButton = wrapper.findAll('button').find(button => button.text() === label)
+  if (localButton) return localButton
+  const teleportedButton = Array.from(document.body.querySelectorAll('button'))
+    .find(button => button.textContent?.trim() === label)
+  return teleportedButton ? new DOMWrapper(teleportedButton) : undefined
+}
+
+const documentBody = () => new DOMWrapper(document.body)
+
+const themeChoice = (wrapper: VueWrapper, value: 'system' | 'light' | 'dark' | 'imported') =>
+  wrapper.get<HTMLInputElement>(`input[name="color-scheme"][value="${value}"]`)
 
 describe('settings and theme controls', () => {
+  enableAutoUnmount(afterEach)
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   beforeEach(() => {
     window.localStorage.clear()
     document.documentElement.removeAttribute('style')
@@ -117,11 +134,20 @@ describe('settings and theme controls', () => {
     const wrapper = await mountSettings()
 
     expect(wrapper.get('nav').text()).toContain('Settings')
-    expect(wrapper.get('select[aria-label="Color theme"]').text()).toContain('System')
-    expect(wrapper.get('select[aria-label="Color theme"]').text()).toContain('Light')
-    expect(wrapper.get('select[aria-label="Color theme"]').text()).not.toContain('Catppuccin')
-    expect(wrapper.get('.theme-preview').attributes('style')).toBeUndefined()
-    expect(wrapper.get('.theme-preview span').attributes('style')).toContain('var(--color-bg)')
+    expect(wrapper.get('nav').text()).toContain('Activity')
+    expect(wrapper.get('nav').text()).not.toContain('Overview')
+    expect(wrapper.get('nav').text()).not.toContain('Tool Health')
+    expect(wrapper.get('nav').text()).not.toContain('Patterns')
+    expect(wrapper.get('.theme-picker legend').text()).toBe('Color scheme')
+    expect(wrapper.findAll('.theme-choice')).toHaveLength(3)
+    expect(themeChoice(wrapper, 'system').element.checked).toBe(true)
+    expect(wrapper.find('input[aria-label="Search Open VSX themes"]').exists()).toBe(false)
+    await buttonWithText(wrapper, 'Add theme')?.trigger('click')
+    expect(documentBody().get('[role="dialog"]').text()).toContain('Add a theme')
+    documentBody().get('input[aria-label="Search Open VSX themes"]')
+    expect(buttonWithText(wrapper, 'Choose theme file…')).toBeDefined()
+    await documentBody().get('button[aria-label="Close dialog"]').trigger('click')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
     expect(wrapper.text()).toContain('Codex import')
     expect(wrapper.text()).toContain('Claude Code')
     expect(wrapper.text()).toContain('Planned')
@@ -136,16 +162,17 @@ describe('settings and theme controls', () => {
       },
     })
 
-    await buttonWithText(wrapper, 'Import VS Code theme…')?.trigger('click')
+    await buttonWithText(wrapper, 'Add theme')?.trigger('click')
+    await buttonWithText(wrapper, 'Choose theme file…')?.trigger('click')
     await flushPromises()
-    expect((wrapper.get('select[aria-label="Color theme"]').element as HTMLSelectElement).value).toBe('imported')
+    expect(themeChoice(wrapper, 'imported').element.checked).toBe(true)
     expect(wrapper.text()).toContain('Imported and applied Fixture.')
     expect(document.documentElement.style.getPropertyValue('--color-bg')).toBe('#101010')
 
-    await buttonWithText(wrapper, 'Remove imported theme')?.trigger('click')
+    await buttonWithText(wrapper, 'Remove')?.trigger('click')
     await flushPromises()
     expect(removeImportedTheme).toHaveBeenCalledOnce()
-    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('system')
+    expect(themeChoice(wrapper, 'system').element.checked).toBe(true)
     expect(wrapper.text()).toContain('Imported theme removed. Using System theme.')
     expect(document.documentElement.style.getPropertyValue('--color-bg')).toBe('')
   })
@@ -154,12 +181,22 @@ describe('settings and theme controls', () => {
     const wrapper = await mountSettings({
       themeApi: { getImportedTheme: vi.fn().mockResolvedValue(importedTheme) },
     })
-    await wrapper.get('select[aria-label="Color theme"]').setValue('light')
-    await buttonWithText(wrapper, 'Remove imported theme')?.trigger('click')
+    await themeChoice(wrapper, 'light').setValue(true)
+    await buttonWithText(wrapper, 'Remove')?.trigger('click')
     await flushPromises()
 
-    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('light')
+    expect(themeChoice(wrapper, 'light').element.checked).toBe(true)
     expect(wrapper.text()).toContain('Imported theme removed. Using Light theme.')
+  })
+
+  it('updates the status text for every built-in theme transition', async () => {
+    const wrapper = await mountSettings()
+
+    await themeChoice(wrapper, 'dark').setValue(true)
+    expect(wrapper.text()).toContain('Using Dark theme.')
+
+    await themeChoice(wrapper, 'system').setValue(true)
+    expect(wrapper.text()).toContain('Using System theme.')
   })
 
   it('disables every theme mutation while a local import is pending', async () => {
@@ -174,14 +211,15 @@ describe('settings and theme controls', () => {
       },
     })
 
-    await buttonWithText(wrapper, 'Import VS Code theme…')?.trigger('click')
+    await buttonWithText(wrapper, 'Add theme')?.trigger('click')
+    await buttonWithText(wrapper, 'Choose theme file…')?.trigger('click')
     await flushPromises()
     expect(buttonWithText(wrapper, 'Importing…')?.attributes('disabled')).toBeDefined()
-    expect(buttonWithText(wrapper, 'Remove imported theme')?.attributes('disabled')).toBeDefined()
+    expect(buttonWithText(wrapper, 'Remove')?.attributes('disabled')).toBeDefined()
 
     finishImport?.({ status: 'success', theme: importedTheme })
     await flushPromises()
-    expect(buttonWithText(wrapper, 'Import VS Code theme…')?.attributes('disabled')).toBeUndefined()
+    expect(buttonWithText(wrapper, 'Add theme')?.attributes('disabled')).toBeUndefined()
   })
 
   it('reports picker cancellation and malformed files without changing the built-in theme', async () => {
@@ -193,15 +231,16 @@ describe('settings and theme controls', () => {
       })
     const wrapper = await mountSettings({ themeApi: { importVsCodeTheme } })
 
-    await buttonWithText(wrapper, 'Import VS Code theme…')?.trigger('click')
+    await buttonWithText(wrapper, 'Add theme')?.trigger('click')
+    await buttonWithText(wrapper, 'Choose theme file…')?.trigger('click')
     await flushPromises()
-    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('system')
-    expect(wrapper.text()).toContain('Theme import cancelled.')
+    expect(themeChoice(wrapper, 'system').element.checked).toBe(true)
+    expect(documentBody().text()).toContain('Theme import cancelled.')
 
-    await buttonWithText(wrapper, 'Import VS Code theme…')?.trigger('click')
+    await buttonWithText(wrapper, 'Choose theme file…')?.trigger('click')
     await flushPromises()
-    expect(wrapper.get('.theme-status').attributes('data-tone')).toBe('error')
-    expect(wrapper.text()).toContain('Error: The theme could not be parsed at line 3.')
+    expect(documentBody().get('.theme-status').attributes('data-tone')).toBe('error')
+    expect(documentBody().text()).toContain('Error: The theme could not be parsed at line 3.')
   })
 
   it('restores a persisted imported theme when Electron starts again', async () => {
@@ -210,7 +249,7 @@ describe('settings and theme controls', () => {
       themeApi: { getImportedTheme: vi.fn().mockResolvedValue(importedTheme) },
     })
 
-    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('imported')
+    expect(themeChoice(wrapper, 'imported').element.checked).toBe(true)
     expect(document.documentElement.getAttribute('data-theme-name')).toBe('Fixture')
     expect(document.documentElement.style.getPropertyValue('--color-bg')).toBe('#101010')
   })
@@ -235,15 +274,16 @@ describe('settings and theme controls', () => {
       },
     })
 
-    expect(wrapper.get('select[aria-label="Color theme"]').attributes('disabled')).toBeDefined()
-    expect(buttonWithText(wrapper, 'Import VS Code theme…')?.attributes('disabled')).toBeDefined()
+    expect(themeChoice(wrapper, 'system').attributes('disabled')).toBeDefined()
+    expect(buttonWithText(wrapper, 'Add theme')?.attributes('disabled')).toBeDefined()
     finishRestore?.(staleTheme)
     await flushPromises()
-    await buttonWithText(wrapper, 'Import VS Code theme…')?.trigger('click')
+    await buttonWithText(wrapper, 'Add theme')?.trigger('click')
+    await buttonWithText(wrapper, 'Choose theme file…')?.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Imported — Fixture')
-    expect(wrapper.text()).not.toContain('Imported — Stale')
+    expect(wrapper.text()).toContain('Fixture')
+    expect(wrapper.text()).not.toContain('Stale')
     expect(document.documentElement.style.getPropertyValue('--color-bg')).toBe('#101010')
   })
 
@@ -261,14 +301,16 @@ describe('settings and theme controls', () => {
 
     failRestore?.(new Error('late failure'))
     await flushPromises()
-    await buttonWithText(wrapper, 'Import VS Code theme…')?.trigger('click')
+    await buttonWithText(wrapper, 'Add theme')?.trigger('click')
+    await buttonWithText(wrapper, 'Choose theme file…')?.trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Imported and applied Fixture.')
-    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('imported')
+    expect(themeChoice(wrapper, 'imported').element.checked).toBe(true)
   })
 
-  it('searches Open VSX and applies a selected theme', async () => {
+  it('searches Open VSX after typing pauses and applies a selected theme', async () => {
+    vi.useFakeTimers()
     const searchOpenVsxThemes = vi.fn().mockResolvedValue({
       status: 'success',
       themes: [{
@@ -284,18 +326,23 @@ describe('settings and theme controls', () => {
       themeApi: { searchOpenVsxThemes, importOpenVsxTheme },
     })
 
-    await wrapper.get('input[aria-label="Search Open VSX themes"]').setValue('fixture')
-    await wrapper.get('form[role="search"]').trigger('submit')
+    await buttonWithText(wrapper, 'Add theme')?.trigger('click')
+    await documentBody().get('input[aria-label="Search Open VSX themes"]').setValue('fixture')
+    expect(buttonWithText(wrapper, 'Search')).toBeUndefined()
+    expect(searchOpenVsxThemes).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(299)
+    expect(searchOpenVsxThemes).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
     await flushPromises()
     expect(searchOpenVsxThemes).toHaveBeenCalledWith('fixture')
-    expect(wrapper.text()).toContain('Fixture Theme')
-    expect(wrapper.text()).toContain('1.2K downloads')
+    expect(documentBody().text()).toContain('Fixture Theme')
+    expect(documentBody().text()).toContain('1.2K downloads')
 
     await buttonWithText(wrapper, 'Apply theme')?.trigger('click')
     await flushPromises()
     expect(importOpenVsxTheme).toHaveBeenCalledWith('fixture.theme', 'light')
     expect(wrapper.text()).toContain('Added and applied Fixture.')
-    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('imported')
+    expect(themeChoice(wrapper, 'imported').element.checked).toBe(true)
   })
 
   it('starts Codex imports from Settings', async () => {

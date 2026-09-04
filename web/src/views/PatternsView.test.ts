@@ -22,16 +22,6 @@ describe('PatternsView', () => {
         userOverrides: 0,
         evidence: [{ eventId: 'event-1', sessionId: 'session-1', label: 'Event #4' }],
       }],
-      failedToolEvents: 3,
-      toolFailures: [{
-        id: 'tool-command',
-        toolName: 'command',
-        recordedEvents: 10,
-        failures: 3,
-        affectedSessions: 2,
-        averageFailureDurationMs: 250,
-        evidence: [{ eventId: 'event-2', sessionId: 'session-2', label: 'Event #7' }],
-      }],
       tokenCoverage: {
         usageRecords: 4,
         sessionsWithUsage: 1,
@@ -51,6 +41,7 @@ describe('PatternsView', () => {
     const api: ApiClient = {
       getDiagnostics,
       getOverview: async () => { throw new Error('Not used') },
+      getToolHealth: async () => { throw new Error('Not used') },
       getProject: async () => { throw new Error('Not used') },
       getSession: async () => { throw new Error('Not used') },
       getPatterns: async () => [],
@@ -80,7 +71,7 @@ describe('PatternsView', () => {
     expect(getDiagnostics).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('Where did the agent need steering?')
     expect(wrapper.text()).toContain('agent mistake')
-    expect(wrapper.text()).toContain('command')
+    expect(wrapper.text()).not.toContain('Which tool categories fail most often?')
     expect(wrapper.text()).toContain('Not reliably yet')
     expect(wrapper.text()).toContain('Not measurable yet')
     expect(wrapper.text()).toContain('No session contains the same normalized tool failure twice')

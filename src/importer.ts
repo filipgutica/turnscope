@@ -6,269 +6,15 @@ import type { SourceAdapter, SourceRecord } from './adapters/types.js'
 import { classifyCorrection, rebuildSignals, refreshSessionMetrics } from './analytics.js'
 import type { TurnscopeDatabase } from './db.js'
 import { redactPayload, redactText } from './redaction.js'
+import { rebuildToolInvocations } from './tool-invocations.js'
 
 const hashId = (prefix: string, value: string): string =>
   `${prefix}_${createHash('sha256').update(value).digest('hex').slice(0, 32)}`
 
-const asObject = (value: unknown): Record<string, unknown> | null =>
-  value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null
-
-const asString = (value: unknown): string | null => typeof value === 'string' ? value : null
-const asNumber = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? value : null
-
-const extractMessage = (payload: Record<string, unknown>): string => {
-  const content = Array.isArray(payload.content) ? payload.content : []
-  return content
-    .flatMap((entry) => {
-      const object = asObject(entry)
-      const text = asString(object?.text)
-      return text ? [text] : []
-    })
-    .join('\n')
-}
-
-interface NormalizedEvent {
-  kind: string
-  actor: 'user' | 'agent' | 'tool' | 'system' | null
-  summary: string
-  toolName: string | null
-  toolSignature: string | null
-  toolStatus: string | null
-  durationMs: number | null
-  usage: {
-    inputTokens: number | null
-    cachedInputTokens: number | null
-    outputTokens: number | null
-    reasoningOutputTokens: number | null
-    nominalCost: number | null
-    billedCost: number | null
-  } | null
-}
-
-const completedItemText = (item: Record<string, unknown>, fallback: string): string =>
-  asString(item.text)
-  ?? asString(item.summary)
-  ?? asString(item.message)
-  ?? asString(item.name)
-  ?? fallback
-
-const normalizeCompletedItem = (item: Record<string, unknown>): NormalizedEvent => {
-  const itemType = asString(item.type) ?? 'unknown'
-  const normalizedItemType = itemType.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase()
-  const reportedStatus = asString(item.status)
-
-  if (normalizedItemType === 'user_message' || normalizedItemType === 'agent_message') {
-    const actor = normalizedItemType === 'user_message' ? 'user' : 'agent'
-    return {
-      kind: actor === 'user' ? 'user_message_completed' : 'agent_message_completed',
-      actor,
-      summary: completedItemText(item, actor === 'user' ? 'User message' : 'Agent message'),
-      toolName: null,
-      toolSignature: null,
-      toolStatus: reportedStatus,
-      durationMs: null,
-      usage: null,
-    }
-  }
-
-  if (normalizedItemType === 'reasoning') {
-    return {
-      kind: 'reasoning', actor: 'agent', summary: completedItemText(item, 'Reasoning event'),
-      toolName: null, toolSignature: null, toolStatus: reportedStatus, durationMs: null, usage: null,
-    }
-  }
-
-  if (normalizedItemType === 'file_change' || normalizedItemType === 'extension') {
-    return {
-      kind: normalizedItemType,
-      actor: 'agent',
-      summary: completedItemText(item, normalizedItemType.replaceAll('_', ' ')),
-      toolName: null,
-      toolSignature: null,
-      toolStatus: reportedStatus,
-      durationMs: null,
-      usage: null,
-    }
-  }
-
-  if (normalizedItemType === 'sub_agent_activity' || normalizedItemType === 'collab_agent_tool_call') {
-    return {
-      kind: 'subagent_activity',
-      actor: 'agent',
-      summary: completedItemText(item, 'Subagent activity'),
-      toolName: null,
-      toolSignature: null,
-      toolStatus: reportedStatus,
-      durationMs: asNumber(item.duration_ms) ?? asNumber(item.duration),
-      usage: null,
-    }
-  }
-
-  const toolTypes = new Set([
-    'command_execution',
-    'dynamic_tool_call',
-    'function_call',
-    'mcp_tool_call',
-    'tool_call',
-    'web_search',
-  ])
-  if (toolTypes.has(normalizedItemType)) {
-    const command = asString(item.command)
-    const toolName = asString(item.name)
-      ?? (normalizedItemType === 'command_execution' ? 'command' : normalizedItemType)
-    const exitCode = asNumber(item.exit_code) ?? asNumber(item.exitCode)
-    const status = exitCode !== null && exitCode !== 0
-      ? 'failed'
-      : reportedStatus ?? (exitCode === 0 ? 'completed' : null)
-    return {
-      kind: 'tool_completion',
-      actor: 'tool',
-      summary: command ?? `${toolName} ${status ?? 'completed'}`,
-      toolName,
-      toolSignature: command ?? asString(item.id),
-      toolStatus: status,
-      durationMs: asNumber(item.duration_ms) ?? asNumber(item.duration),
-      usage: null,
-    }
-  }
-
-  return {
-    kind: 'item_completed',
-    actor: 'system',
-    summary: completedItemText(item, `${itemType} completed`),
-    toolName: null,
-    toolSignature: null,
-    toolStatus: reportedStatus,
-    durationMs: null,
-    usage: null,
-  }
-}
-
-const normalizeRecord = (record: SourceRecord, usageCompatible: boolean): NormalizedEvent => {
-  const { payload } = record
-  if (record.type === 'session_meta') {
-    return {
-      kind: 'session_meta', actor: 'system', summary: 'Session started',
-      toolName: null, toolSignature: null, toolStatus: null, durationMs: null, usage: null,
-    }
-  }
-
-  if (record.type === 'turn_context') {
-    const model = asString(payload.model)
-    return {
-      kind: 'turn_context', actor: 'system', summary: model ? `Turn context: ${model}` : 'Turn context',
-      toolName: null, toolSignature: null, toolStatus: null, durationMs: null, usage: null,
-    }
-  }
-
-  if (record.type === 'response_item' && payload.type === 'message') {
-    const role = asString(payload.role)
-    const summary = extractMessage(payload) || 'Message'
-    const kind = role === 'user'
-      ? 'user_turn'
-      : role === 'assistant'
-        ? 'agent_turn'
-        : 'system_message'
-    return {
-      kind,
-      actor: role === 'user' ? 'user' : role === 'assistant' ? 'agent' : 'system',
-      summary,
-      toolName: null,
-      toolSignature: null,
-      toolStatus: null,
-      durationMs: null,
-      usage: null,
-    }
-  }
-
-  if (record.type === 'response_item') {
-    const responseType = asString(payload.type) ?? 'response_item'
-    if (responseType === 'reasoning') return normalizeCompletedItem(payload)
-    if (responseType === 'agent_message' || responseType === 'user_message') {
-      const message = normalizeCompletedItem(payload)
-      return {
-        ...message,
-        kind: responseType === 'user_message' ? 'user_turn' : 'agent_turn',
-      }
-    }
-    const name = asString(payload.name) ?? responseType.replace(/_output$/, '')
-    const output = asString(payload.output)
-    const argumentsText = asString(payload.arguments) ?? asString(payload.input)
-    const isResult = responseType.endsWith('_output') || responseType.endsWith('_result')
-    const isTool = isResult
-      || responseType.endsWith('_call')
-      || ['function_call', 'mcp_call', 'web_search_call'].includes(responseType)
-    if (!isTool) {
-      return {
-        kind: 'response_item', actor: 'system', summary: completedItemText(payload, responseType),
-        toolName: null, toolSignature: null, toolStatus: asString(payload.status), durationMs: null, usage: null,
-      }
-    }
-    return {
-      kind: isResult ? 'tool_result' : 'tool_call',
-      actor: 'tool',
-      summary: output ?? argumentsText ?? name,
-      toolName: name,
-      toolSignature: argumentsText ?? asString(payload.call_id) ?? asString(payload.id),
-      toolStatus: asString(payload.status),
-      durationMs: null,
-      usage: null,
-    }
-  }
-
-  if (record.type === 'event_msg') {
-    const eventType = asString(payload.type) ?? 'event_msg'
-    if (eventType === 'token_count') {
-      const info = asObject(payload.info)
-      const usage = asObject(info?.last_token_usage)
-      return {
-        kind: 'usage', actor: 'system', summary: 'Token usage reported',
-        toolName: null, toolSignature: null, toolStatus: null, durationMs: null,
-        usage: usage && usageCompatible ? {
-          inputTokens: asNumber(usage.input_tokens),
-          cachedInputTokens: asNumber(usage.cached_input_tokens),
-          outputTokens: asNumber(usage.output_tokens),
-          reasoningOutputTokens: asNumber(usage.reasoning_output_tokens),
-          nominalCost: asNumber(info?.nominal_cost),
-          billedCost: asNumber(info?.billed_cost),
-        } : null,
-      }
-    }
-
-    if (eventType === 'item_completed') {
-      const item = asObject(payload.item)
-      return item ? normalizeCompletedItem(item) : {
-        kind: 'item_completed', actor: 'system', summary: 'Item completed',
-        toolName: null, toolSignature: null, toolStatus: null, durationMs: null, usage: null,
-      }
-    }
-
-    return {
-      kind: eventType,
-      actor: eventType === 'task_complete' ? 'agent' : 'system',
-      summary: asString(payload.last_agent_message) ?? eventType.replaceAll('_', ' '),
-      toolName: null, toolSignature: null, toolStatus: null, durationMs: null, usage: null,
-    }
-  }
-
-  return {
-    kind: record.type,
-    actor: 'system',
-    summary: record.type.replaceAll('_', ' '),
-    toolName: null, toolSignature: null, toolStatus: null, durationMs: null, usage: null,
-  }
-}
-
-const getSessionFields = (records: SourceRecord[]) => {
+const getSessionFields = (records: SourceRecord[], title: string | null) => {
   const timestamps = records.flatMap(({ timestamp }) => timestamp ? [timestamp] : []).sort()
-  const firstUserMessage = records.find(({ type, payload }) =>
-    type === 'response_item' && payload.type === 'message' && payload.role === 'user')
-  const titleText = firstUserMessage ? extractMessage(firstUserMessage.payload) : ''
   return {
-    title: titleText ? redactText(titleText).slice(0, 120) : 'Untitled session',
+    title: title ? redactText(title).slice(0, 120) : 'Untitled session',
     startedAt: timestamps[0] ?? null,
     endedAt: timestamps.at(-1) ?? null,
   }
@@ -297,7 +43,7 @@ const importParsedFile = ({
 }): { inserted: number; unchanged: number; sessionId: string } => {
   const threadId = hashId('thread', `${adapter.installationId}:${parsed.threadId}`)
   const sessionId = hashId('session', `${adapter.installationId}:${relativePath}`)
-  const sessionFields = getSessionFields(parsed.records)
+  const sessionFields = getSessionFields(parsed.records, parsed.title)
 
   database.prepare(`
     INSERT INTO threads (id, installation_id, source_thread_id)
@@ -372,15 +118,18 @@ const importParsedFile = ({
       compressedPayload,
     )
 
-    const event = normalizeRecord(record, parsed.usageCompatible)
+    const event = record.normalized
     const summary = redactText(event.summary)
-    const toolName = event.toolName === null ? null : redactText(event.toolName)
-    const toolSignature = event.toolSignature === null ? null : redactText(event.toolSignature)
+    const toolName = event.tool?.rawName === null || event.tool === null ? null : redactText(event.tool.rawName)
+    const toolSignature = event.tool?.signature === null || event.tool === null
+      ? null
+      : redactText(event.tool.signature)
     database.prepare(`
       INSERT INTO events (
         id, installation_id, session_id, source_record_id, kind, actor, occurred_at,
-        source_order, summary, tool_name, tool_signature, tool_status, duration_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        source_order, summary, tool_name, tool_signature, tool_status, duration_ms,
+        tool_invocation_source_id, tool_phase, tool_category, tool_raw_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         kind = excluded.kind,
         actor = excluded.actor,
@@ -389,7 +138,11 @@ const importParsedFile = ({
         tool_name = excluded.tool_name,
         tool_signature = excluded.tool_signature,
         tool_status = excluded.tool_status,
-        duration_ms = excluded.duration_ms
+        duration_ms = excluded.duration_ms,
+        tool_invocation_source_id = excluded.tool_invocation_source_id,
+        tool_phase = excluded.tool_phase,
+        tool_category = excluded.tool_category,
+        tool_raw_status = excluded.tool_raw_status
     `).run(
       eventId,
       adapter.installationId,
@@ -402,8 +155,12 @@ const importParsedFile = ({
       summary,
       toolName,
       toolSignature,
-      event.toolStatus,
-      event.durationMs,
+      event.tool?.status ?? null,
+      event.tool?.durationMs ?? null,
+      event.tool?.sourceInvocationId ?? null,
+      event.tool?.phase ?? null,
+      event.tool?.category ?? null,
+      event.tool?.rawStatus ?? null,
     )
 
     database.prepare('DELETE FROM usage_records WHERE event_id = ?').run(eventId)
@@ -427,8 +184,8 @@ const importParsedFile = ({
       )
     }
 
-    if (event.actor === 'user') {
-      const correction = classifyCorrection(summary)
+    if (event.actor === 'user' && event.correctionText) {
+      const correction = classifyCorrection(redactText(event.correctionText))
       if (correction) {
         database.prepare(`
           INSERT INTO corrections (
@@ -464,14 +221,26 @@ const importParsedFile = ({
   `).run(adapter.installationId, relativePath, importBatchId)
   database.prepare(`
     INSERT INTO source_files (
-      installation_id, relative_path, content_hash, size_bytes, modified_at_ms, imported_at
-    ) VALUES (?, ?, ?, ?, ?, ?)
+      installation_id, relative_path, content_hash, size_bytes, modified_at_ms, imported_at,
+      adapter_version, warnings_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(installation_id, relative_path) DO UPDATE SET
       content_hash = excluded.content_hash,
       size_bytes = excluded.size_bytes,
       modified_at_ms = excluded.modified_at_ms,
-      imported_at = excluded.imported_at
-  `).run(adapter.installationId, relativePath, contentHash, sizeBytes, modifiedAtMs, importedAt)
+      imported_at = excluded.imported_at,
+      adapter_version = excluded.adapter_version,
+      warnings_json = excluded.warnings_json
+  `).run(
+    adapter.installationId,
+    relativePath,
+    contentHash,
+    sizeBytes,
+    modifiedAtMs,
+    importedAt,
+    adapter.adapterVersion,
+    JSON.stringify(uniqueWarnings(parsed.warnings)),
+  )
 
   return { inserted, unchanged, sessionId }
 }
@@ -553,60 +322,64 @@ export const importFromAdapter = async ({
     )
 
     for (const file of files) {
-    const cursor = database.prepare(`
-      SELECT
-        content_hash AS contentHash,
-        size_bytes AS sizeBytes,
-        modified_at_ms AS modifiedAtMs
-      FROM source_files
-      WHERE installation_id = ? AND relative_path = ?
-    `).get(adapter.installationId, file.relativePath) as {
-      contentHash: string
-      sizeBytes: number
-      modifiedAtMs: number
-    } | undefined
-
-    if (cursor?.sizeBytes === file.sizeBytes && cursor.modifiedAtMs === file.modifiedAtMs) {
-      filesSkipped += 1
-      reportProgress({ phase: 'importing', currentFile: file.relativePath })
-      continue
-    }
-
-    const { contentHash, parsed } = await adapter.readSourceFile(file)
-    if (cursor?.contentHash === contentHash) {
-      database.prepare(`
-        UPDATE source_files
-        SET size_bytes = ?, modified_at_ms = ?, imported_at = ?
+      const cursor = database.prepare(`
+        SELECT
+          content_hash AS contentHash,
+          size_bytes AS sizeBytes,
+          modified_at_ms AS modifiedAtMs,
+          adapter_version AS adapterVersion
+        FROM source_files
         WHERE installation_id = ? AND relative_path = ?
-      `).run(
-        file.sizeBytes,
-        file.modifiedAtMs,
-        startedAt,
-        adapter.installationId,
-        file.relativePath,
-      )
-      filesSkipped += 1
-      reportProgress({ phase: 'importing', currentFile: file.relativePath })
-      continue
-    }
+      `).get(adapter.installationId, file.relativePath) as {
+        contentHash: string
+        sizeBytes: number
+        modifiedAtMs: number
+        adapterVersion: string | null
+      } | undefined
 
-    warnings.push(...parsed.warnings)
-    const result = database.transaction(() => importParsedFile({
-      database,
-      adapter,
-      relativePath: file.relativePath,
-      contentHash,
-      sizeBytes: file.sizeBytes,
-      modifiedAtMs: file.modifiedAtMs,
-      parsed,
-      importedAt: startedAt,
-      importBatchId: randomUUID(),
-    }))()
-    filesImported += 1
-    recordsInserted += result.inserted
-    recordsUnchanged += result.unchanged
-    affectedSessions.add(result.sessionId)
-    reportProgress({ phase: 'importing', currentFile: file.relativePath })
+      if (cursor?.adapterVersion === adapter.adapterVersion
+        && cursor.sizeBytes === file.sizeBytes
+        && cursor.modifiedAtMs === file.modifiedAtMs) {
+        filesSkipped += 1
+        reportProgress({ phase: 'importing', currentFile: file.relativePath })
+        continue
+      }
+
+      const { contentHash, parsed } = await adapter.readSourceFile(file)
+      if (cursor?.adapterVersion === adapter.adapterVersion && cursor.contentHash === contentHash) {
+        database.prepare(`
+          UPDATE source_files
+          SET size_bytes = ?, modified_at_ms = ?, imported_at = ?
+          WHERE installation_id = ? AND relative_path = ?
+        `).run(
+          file.sizeBytes,
+          file.modifiedAtMs,
+          startedAt,
+          adapter.installationId,
+          file.relativePath,
+        )
+        filesSkipped += 1
+        reportProgress({ phase: 'importing', currentFile: file.relativePath })
+        continue
+      }
+
+      warnings.push(...parsed.warnings)
+      const result = database.transaction(() => importParsedFile({
+        database,
+        adapter,
+        relativePath: file.relativePath,
+        contentHash,
+        sizeBytes: file.sizeBytes,
+        modifiedAtMs: file.modifiedAtMs,
+        parsed,
+        importedAt: startedAt,
+        importBatchId: randomUUID(),
+      }))()
+      filesImported += 1
+      recordsInserted += result.inserted
+      recordsUnchanged += result.unchanged
+      affectedSessions.add(result.sessionId)
+      reportProgress({ phase: 'importing', currentFile: file.relativePath })
     }
 
     database.transaction(() => {
@@ -624,6 +397,7 @@ export const importFromAdapter = async ({
 
     reportProgress({ phase: 'analyzing' })
     for (const sessionId of affectedSessions) {
+      rebuildToolInvocations({ database, sessionId })
       refreshSessionMetrics({ database, sessionId })
       rebuildSignals({ database, sessionId })
     }

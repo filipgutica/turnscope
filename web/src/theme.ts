@@ -83,6 +83,7 @@ export const useTheme = (themeApi: TurnscopeThemeApi | undefined = window.turnsc
   const openVsxError = ref<string | null>(null)
   const media = window.matchMedia('(prefers-color-scheme: dark)')
   let themeRevision = 0
+  let openVsxSearchRevision = 0
   const resolvedTheme = computed<ResolvedTheme>(() => {
     if (preference.value === 'imported' && !importedTheme.value) {
       return systemDark.value ? 'dark' : 'light'
@@ -175,6 +176,14 @@ export const useTheme = (themeApi: TurnscopeThemeApi | undefined = window.turnsc
   }
 
   const searchOpenVsxThemes = async (query: string): Promise<void> => {
+    const revision = ++openVsxSearchRevision
+    const normalizedQuery = query.trim()
+    if (!normalizedQuery) {
+      openVsxResults.value = []
+      openVsxError.value = null
+      isSearchingOpenVsx.value = false
+      return
+    }
     if (!themeApi) {
       openVsxError.value = 'Open VSX themes are available in the desktop app.'
       return
@@ -182,7 +191,8 @@ export const useTheme = (themeApi: TurnscopeThemeApi | undefined = window.turnsc
     isSearchingOpenVsx.value = true
     openVsxError.value = null
     try {
-      const result = await themeApi.searchOpenVsxThemes(query)
+      const result = await themeApi.searchOpenVsxThemes(normalizedQuery)
+      if (revision !== openVsxSearchRevision) return
       if (result.status === 'error') {
         openVsxResults.value = []
         openVsxError.value = result.message
@@ -190,10 +200,11 @@ export const useTheme = (themeApi: TurnscopeThemeApi | undefined = window.turnsc
         openVsxResults.value = result.themes
       }
     } catch {
+      if (revision !== openVsxSearchRevision) return
       openVsxResults.value = []
       openVsxError.value = 'Open VSX search is unavailable right now.'
     } finally {
-      isSearchingOpenVsx.value = false
+      if (revision === openVsxSearchRevision) isSearchingOpenVsx.value = false
     }
   }
 
@@ -238,14 +249,14 @@ export const useTheme = (themeApi: TurnscopeThemeApi | undefined = window.turnsc
     }),
     { immediate: true },
   )
-  watch(preference, (value, previous) => {
+  watch(preference, (value) => {
     if (value === 'system') localStorage.removeItem('turnscope-theme')
     else localStorage.setItem('turnscope-theme', value)
-    if (value !== 'imported' && previous === 'imported' && importedTheme.value) {
+    if (value !== 'imported' && !isRemovingImportedTheme.value) {
       const label = value[0]?.toUpperCase() + value.slice(1)
       status.value = { tone: 'neutral', message: `Using ${label} theme.` }
     }
-  })
+  }, { flush: 'sync' })
   onMounted(() => {
     media.addEventListener('change', handleSystemChange)
     void loadImportedTheme()
