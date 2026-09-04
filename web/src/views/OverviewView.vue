@@ -6,16 +6,16 @@
         <h1>Overview</h1>
         <p>Health and activity across all imported projects.</p>
       </div>
-      <button type="button" class="secondary-button" :disabled="loading" @click="loadOverview">
+      <UiButton variant="secondary" :loading="loading" @click="loadOverview">
         Refresh
-      </button>
+      </UiButton>
     </header>
 
     <p v-if="loading" class="status-message">Loading overview…</p>
-    <div v-else-if="error" class="error-message" role="alert">
+    <UiAlert v-else-if="error" class="error-message" tone="danger">
       <p>{{ error }}</p>
-      <button type="button" @click="loadOverview">Retry</button>
-    </div>
+      <UiButton @click="loadOverview">Retry</UiButton>
+    </UiAlert>
     <template v-else-if="overview">
       <div class="metric-grid metric-grid--summary">
         <MetricCard label="Projects" :metric="overview.projects" />
@@ -24,7 +24,7 @@
         <MetricCard label="Errors" :metric="overview.errors" />
       </div>
 
-      <details class="panel metric-details">
+      <UiSurface as="details" class="panel metric-details" padding="none">
         <summary>Usage and quality details</summary>
         <div class="metric-grid metric-grid--details">
           <MetricCard label="Input tokens" :metric="overview.inputTokens" />
@@ -34,9 +34,9 @@
           <MetricCard label="Duration" :metric="overview.duration" />
           <MetricCard label="Correction rate" :metric="overview.correctionRate" />
         </div>
-      </details>
+      </UiSurface>
 
-      <section class="panel">
+      <UiSurface class="panel" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Imported data</p>
@@ -56,13 +56,12 @@
           label="Projects"
         >
           <template #toolbar>
-            <label class="search-control">
-              <span>Search projects</span>
-              <input v-model="projectSearch" type="search" placeholder="Name or repository" aria-label="Search projects" />
-            </label>
+            <UiField control-id="project-search" class="search-control" label="Search projects">
+              <UiInput id="project-search" v-model="projectSearch" type="search" placeholder="Name or repository" />
+            </UiField>
           </template>
         </VirtualDataTable>
-      </section>
+      </UiSurface>
     </template>
   </section>
 </template>
@@ -70,6 +69,8 @@
 <script setup lang="ts">
 import { computed, h, inject, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+
+import { UiAlert, UiButton, UiField, UiInput, UiSurface } from '@filipgutica/ui'
 
 import type { OverviewResponse, ProjectSummary } from '@shared/contracts'
 

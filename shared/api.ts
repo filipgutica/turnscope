@@ -1,4 +1,11 @@
 import type {
+  NormalizedTheme,
+  OpenVsxThemeSearchResult,
+  ThemeImportResult,
+  ThemeRemovalResult,
+} from '@filipgutica/ui/theme'
+
+import type {
   CorrectionOverrideInput,
   DiagnosticsResponse,
   ImportJobStatus,
@@ -11,12 +18,6 @@ import type {
   SignalOverrideInput,
   SourceEvidenceResponse,
 } from './contracts.js'
-import type {
-  NormalizedTheme,
-  OpenVsxThemeSearchResult,
-  ThemeImportResult,
-  ThemeRemovalResult,
-} from './theme.js'
 
 export interface TurnscopeApi {
   getOverview: () => Promise<OverviewResponse>

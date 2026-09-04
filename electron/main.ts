@@ -1,5 +1,9 @@
 import { join } from 'node:path'
 
+import {
+  createOpenVsxThemeService,
+  type OpenVsxThemeService,
+} from '@filipgutica/ui/open-vsx'
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
 
 import type { TurnscopeApi } from '../shared/api.js'
@@ -14,7 +18,6 @@ import { closeDatabase, openDatabase, type TurnscopeDatabase } from '../src/db.j
 import { createLocalApi } from '../src/local-api.js'
 import { defaultDatabasePath } from '../src/paths.js'
 import { createImportManager, type ImportManager } from './import-manager.js'
-import { createOpenVsxThemeService, type OpenVsxThemeService } from './open-vsx-theme.js'
 import { createThemeImportService, type ThemeImportService } from './theme-import.js'
 
 let database: TurnscopeDatabase | undefined

@@ -3,10 +3,10 @@
     <RouterLink class="back-link" :to="backTarget">← Back to {{ backLabel }}</RouterLink>
 
     <p v-if="loading" class="status-message">Loading session…</p>
-    <div v-else-if="error" class="error-message" role="alert">
+    <UiAlert v-else-if="error" class="error-message" tone="danger">
       <p>{{ error }}</p>
-      <button type="button" @click="loadSession">Retry</button>
-    </div>
+      <UiButton @click="loadSession">Retry</UiButton>
+    </UiAlert>
     <template v-else-if="detail">
       <header class="page-heading">
         <div>
@@ -19,7 +19,7 @@
         </div>
       </header>
 
-      <section class="panel">
+      <UiSurface class="panel" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Source order</p>
@@ -29,24 +29,22 @@
         </div>
 
         <div class="data-table__toolbar timeline-filters">
-          <label class="search-control">
-            <span>Search timeline</span>
-            <input v-model="search" type="search" placeholder="Message or tool" aria-label="Search timeline" />
-          </label>
-          <label class="filter-control">
-            <span>Actor</span>
-            <select v-model="actor" aria-label="Timeline actor filter">
+          <UiField control-id="timeline-search" class="search-control" label="Search timeline">
+            <UiInput id="timeline-search" v-model="search" type="search" placeholder="Message or tool" />
+          </UiField>
+          <UiField control-id="timeline-actor" class="filter-control" label="Actor">
+            <UiSelect id="timeline-actor" :model-value="actor" @update:model-value="setActor">
               <option value="">Everyone</option>
               <option value="user">User</option>
               <option value="agent">Agent</option>
               <option value="tool">Tool</option>
               <option value="system">System</option>
-            </select>
-          </label>
+            </UiSelect>
+          </UiField>
         </div>
         <div v-if="highlightedEventId" class="linked-event-notice">
           <span>Showing the linked evidence event.</span>
-          <button type="button" class="text-button" @click="showFullTimeline">Show full timeline</button>
+          <UiButton variant="text" @click="showFullTimeline">Show full timeline</UiButton>
         </div>
         <p v-if="orderedTimeline.length === 0" class="empty-state">
           No events match the current search and filters.
@@ -102,31 +100,31 @@
               </dl>
               <div class="event-actions">
                 <span v-for="label in item.event.labels" :key="label" class="label-chip">{{ label }}</span>
-                <button type="button" class="text-button" @click="openEvidence(item.event.sourceRecordId, $event)">
+                <UiButton variant="text" @click="openEvidence(item.event.sourceRecordId, $event)">
                   Inspect evidence
-                </button>
-                <button
+                </UiButton>
+                <UiButton
                   v-if="item.event.actor === 'user' && !item.event.labels.includes('correction')"
                   type="button"
-                  class="text-button"
-                  :disabled="savingEventId === item.event.id"
+                  variant="text"
+                  :loading="savingEventId === item.event.id"
                   @click="markAsCorrection(item.event.id)"
                 >
                   {{ savingEventId === item.event.id ? 'Saving…' : 'Mark as agent correction' }}
-                </button>
+                </UiButton>
               </div>
             </article>
           </li>
         </ol>
         <p v-if="loadingMore" class="timeline-loading" aria-live="polite">Loading more events…</p>
         </div>
-      </section>
+      </UiSurface>
 
-      <p v-if="correctionSaveError" class="error-message" role="alert">
+      <UiAlert v-if="correctionSaveError" class="error-message" tone="danger">
         {{ correctionSaveError }}
-      </p>
+      </UiAlert>
 
-      <section v-if="detail.corrections.length > 0" class="panel">
+      <UiSurface v-if="detail.corrections.length > 0" class="panel" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Inferred</p>
@@ -140,35 +138,33 @@
             <p>{{ correction.explanation }}</p>
             <a :href="`#event-${correction.eventId}`">View event</a>
             <form class="correction-editor" @submit.prevent="saveCorrection(correction.id)">
-              <label>
-                Classification
-                <select
-                  :value="correctionEdits[correction.id]?.category ?? correction.category"
-                  @change="setCorrectionCategory(correction.id, $event)"
+              <UiField :control-id="`correction-${correction.id}`" label="Classification">
+                <UiSelect
+                  :id="`correction-${correction.id}`"
+                  :model-value="correctionEdits[correction.id]?.category ?? correction.category"
+                  @update:model-value="setCorrectionCategory(correction.id, $event)"
                 >
                   <option v-for="category in correctionCategories" :key="category" :value="category">
                     {{ category.replaceAll('_', ' ') }}
                   </option>
-                </select>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  :checked="correctionEdits[correction.id]?.countsAsCorrection ?? correction.countsAsCorrection"
-                  @change="setCorrectionCounted(correction.id, $event)"
-                />
+                </UiSelect>
+              </UiField>
+              <UiCheckbox
+                :model-value="correctionEdits[correction.id]?.countsAsCorrection ?? correction.countsAsCorrection"
+                @update:model-value="setCorrectionCounted(correction.id, $event)"
+              >
                 Count as an agent correction or unproductive steering
-              </label>
-              <button type="submit" :disabled="savingCorrectionId === correction.id">
+              </UiCheckbox>
+              <UiButton type="submit" :loading="savingCorrectionId === correction.id">
                 {{ savingCorrectionId === correction.id ? 'Saving…' : 'Save classification' }}
-              </button>
+              </UiButton>
               <small v-if="correction.hasUserOverride">User override applied</small>
             </form>
           </li>
         </ul>
-      </section>
+      </UiSurface>
 
-      <section v-if="detail.signals.length > 0" class="panel">
+      <UiSurface v-if="detail.signals.length > 0" class="panel" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Diagnostic signals</p>
@@ -181,18 +177,18 @@
             <span>{{ signal.severity }} · {{ formatConfidence(signal.confidence) }} confidence</span>
             <span v-if="signal.dismissed">dismissed by user</span>
             <p>{{ signal.explanation }}</p>
-            <button
+            <UiButton
               type="button"
-              class="text-button"
-              :disabled="savingSignalId === signal.id"
+              variant="text"
+              :loading="savingSignalId === signal.id"
               @click="setSignalDismissed(signal.id, !signal.dismissed)"
             >
               {{ signal.dismissed ? 'Restore signal' : 'Dismiss signal' }}
-            </button>
+            </UiButton>
             <small v-if="signal.hasUserOverride">User override applied</small>
           </li>
         </ul>
-      </section>
+      </UiSurface>
 
       <EvidencePanel :source-record-id="selectedEvidenceId" @close="closeEvidence" />
     </template>
@@ -203,6 +199,16 @@
 import { computed, inject, nextTick, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import { useVirtualizer } from '@tanstack/vue-virtual'
+
+import {
+  UiAlert,
+  UiButton,
+  UiCheckbox,
+  UiField,
+  UiInput,
+  UiSelect,
+  UiSurface,
+} from '@filipgutica/ui'
 
 import type {
   CorrectionOverrideInput,
@@ -230,7 +236,7 @@ const error = ref<string | null>(null)
 const selectedEvidenceId = ref<string | null>(null)
 const evidenceTrigger = ref<HTMLElement | null>(null)
 const search = ref('')
-const actor = ref<SessionTimelineQuery['actor'] | ''>('')
+const actor = ref<NonNullable<SessionTimelineQuery['actor']> | ''>('')
 const timelineViewport = ref<HTMLDivElement | null>(null)
 const timelineRevision = ref(0)
 const correctionEdits = ref<Record<string, CorrectionOverrideInput>>({})
@@ -238,6 +244,12 @@ const savingCorrectionId = ref<string | null>(null)
 const correctionSaveError = ref<string | null>(null)
 const savingEventId = ref<string | null>(null)
 const savingSignalId = ref<string | null>(null)
+
+const setActor = (value: string): void => {
+  if (value === '' || value === 'user' || value === 'agent' || value === 'tool' || value === 'system') {
+    actor.value = value
+  }
+}
 
 const sessionId = computed(() => String(route.params.id))
 const highlightedEventId = computed(() =>
@@ -366,21 +378,20 @@ const showFullTimeline = (): void => {
   void router.replace({ query, hash: '' })
 }
 
-const setCorrectionCategory = (correctionId: string, event: Event): void => {
-  const target = event.target
+const setCorrectionCategory = (correctionId: string, value: string): void => {
   const current = correctionEdits.value[correctionId]
-  if (!(target instanceof HTMLSelectElement) || !current) return
+  const category = correctionCategories.find((candidate) => candidate === value)
+  if (!current || !category) return
   correctionEdits.value[correctionId] = {
     ...current,
-    category: target.value as CorrectionOverrideInput['category'],
+    category,
   }
 }
 
-const setCorrectionCounted = (correctionId: string, event: Event): void => {
-  const target = event.target
+const setCorrectionCounted = (correctionId: string, value: boolean): void => {
   const current = correctionEdits.value[correctionId]
-  if (!(target instanceof HTMLInputElement) || !current) return
-  correctionEdits.value[correctionId] = { ...current, countsAsCorrection: target.checked }
+  if (!current) return
+  correctionEdits.value[correctionId] = { ...current, countsAsCorrection: value }
 }
 
 const saveCorrection = async (correctionId: string): Promise<void> => {

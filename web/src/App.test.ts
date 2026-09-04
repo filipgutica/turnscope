@@ -4,8 +4,8 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { parseVsCodeTheme } from '@filipgutica/ui/theme'
 import type { ImportJobStatus } from '@shared/contracts'
-import { parseVsCodeTheme } from '@shared/theme'
 
 import App from './App.vue'
 import { apiKey, type ApiClient } from './api'
@@ -118,7 +118,10 @@ describe('settings and theme controls', () => {
 
     expect(wrapper.get('nav').text()).toContain('Settings')
     expect(wrapper.get('select[aria-label="Color theme"]').text()).toContain('System')
-    expect(wrapper.get('select[aria-label="Color theme"]').text()).toContain('Catppuccin Latte')
+    expect(wrapper.get('select[aria-label="Color theme"]').text()).toContain('Light')
+    expect(wrapper.get('select[aria-label="Color theme"]').text()).not.toContain('Catppuccin')
+    expect(wrapper.get('.theme-preview').attributes('style')).toBeUndefined()
+    expect(wrapper.get('.theme-preview span').attributes('style')).toContain('var(--color-bg)')
     expect(wrapper.text()).toContain('Codex import')
     expect(wrapper.text()).toContain('Claude Code')
     expect(wrapper.text()).toContain('Planned')

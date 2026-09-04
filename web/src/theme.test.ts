@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { NormalizedTheme } from '@shared/theme'
+import type { NormalizedTheme } from '@filipgutica/ui/theme'
 import { applyTheme, resolveTheme } from './theme'
 
 const importedTheme: NormalizedTheme = {
@@ -48,7 +48,12 @@ const createRoot = () => {
     attributes,
     root: {
       classList: {
-        toggle: (name: string, enabled: boolean) => enabled ? classes.add(name) : classes.delete(name),
+        toggle: (name: string, enabled?: boolean) => {
+          const active = enabled ?? !classes.has(name)
+          if (active) classes.add(name)
+          else classes.delete(name)
+          return active
+        },
       },
       style: {
         setProperty: (name: string, value: string) => properties.set(name, value),

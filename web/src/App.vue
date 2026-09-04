@@ -1,5 +1,5 @@
 <template>
-  <div class="app-shell">
+  <div class="app-shell bg-ui-bg text-ui-text">
     <header class="app-header">
       <RouterLink class="brand" :to="{ name: 'overview' }">Turnscope</RouterLink>
       <nav aria-label="Primary navigation">

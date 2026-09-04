@@ -8,7 +8,7 @@
       </div>
     </header>
 
-    <section class="panel settings-section" aria-labelledby="appearance-heading">
+    <UiSurface class="panel settings-section" padding="default" aria-labelledby="appearance-heading">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Appearance</p>
@@ -18,21 +18,21 @@
       </div>
 
       <div class="settings-row">
-        <label class="settings-control">
-          <span>Active theme</span>
-          <select
+        <UiField control-id="active-theme" class="settings-control" label="Active theme">
+          <UiSelect
+            id="active-theme"
             v-model="theme.preference.value"
             aria-label="Color theme"
             :disabled="theme.isChangingTheme.value"
           >
             <option value="system">System</option>
-            <option value="light">Light — Catppuccin Latte</option>
-            <option value="dark">Dark — Catppuccin Mocha</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
             <option v-if="theme.importedTheme.value" value="imported">
               Imported — {{ theme.importedTheme.value.name }}
             </option>
-          </select>
-        </label>
+          </UiSelect>
+        </UiField>
         <div class="theme-preview" aria-hidden="true">
           <span
             v-for="(color, index) in previewColors"
@@ -48,35 +48,35 @@
           <p>Find open-source color themes from Open VSX. Turnscope imports colors only; extension code never runs.</p>
         </div>
         <form class="theme-search" role="search" @submit.prevent="submitSearch">
-          <label>
-            <span class="sr-only">Search Open VSX themes</span>
-            <input
+          <UiField control-id="theme-search" label="Search Open VSX themes" class="theme-search__field">
+            <UiInput
+              id="theme-search"
               v-model="searchQuery"
+              aria-label="Search Open VSX themes"
               type="search"
               maxlength="100"
               placeholder="Search themes"
-              aria-label="Search Open VSX themes"
-            >
-          </label>
-          <button type="submit" :disabled="theme.isSearchingOpenVsx.value || !searchQuery.trim()">
+            />
+          </UiField>
+          <UiButton type="submit" :loading="theme.isSearchingOpenVsx.value" :disabled="!searchQuery.trim()">
             {{ theme.isSearchingOpenVsx.value ? 'Searching…' : 'Search' }}
-          </button>
+          </UiButton>
         </form>
         <div class="theme-suggestions" aria-label="Suggested theme searches">
-          <button
+          <UiButton
             v-for="suggestion in suggestions"
             :key="suggestion"
             type="button"
-            class="text-button"
+            variant="text"
             :disabled="theme.isSearchingOpenVsx.value"
             @click="searchSuggestion(suggestion)"
           >
             {{ suggestion }}
-          </button>
+          </UiButton>
         </div>
-        <p v-if="theme.openVsxError.value" class="error-message" role="alert">
+        <UiAlert v-if="theme.openVsxError.value" class="error-message" tone="danger">
           {{ theme.openVsxError.value }}
-        </p>
+        </UiAlert>
         <p
           v-else-if="hasSearched && !theme.isSearchingOpenVsx.value && theme.openVsxResults.value.length === 0"
           class="empty-state"
@@ -84,10 +84,12 @@
           No compatible themes found. Try another search.
         </p>
         <div v-else-if="theme.openVsxResults.value.length > 0" class="theme-results">
-          <article
+          <UiSurface
             v-for="result in theme.openVsxResults.value"
             :key="result.id"
+            as="article"
             class="theme-result-card"
+            padding="compact"
           >
             <div class="theme-result-card__heading">
               <span class="theme-result-icon" aria-hidden="true">◐</span>
@@ -97,15 +99,16 @@
               </div>
             </div>
             <p>{{ result.description || 'No description provided.' }}</p>
-            <button
+            <UiButton
               type="button"
-              class="secondary-button"
+              variant="secondary"
+              :loading="theme.installingOpenVsxId.value === result.id"
               :disabled="theme.isChangingTheme.value"
               @click="theme.importOpenVsxTheme(result.id)"
             >
               {{ theme.installingOpenVsxId.value === result.id ? 'Adding…' : 'Apply theme' }}
-            </button>
-          </article>
+            </UiButton>
+          </UiSurface>
         </div>
       </div>
 
@@ -115,37 +118,36 @@
           <p>Choose a VS Code <code>.json</code> or <code>.jsonc</code> color-theme file up to 1 MB.</p>
         </div>
         <div class="theme-actions">
-          <button
+          <UiButton
             type="button"
-            class="secondary-button"
+            variant="secondary"
+            :loading="theme.isImporting.value"
             :disabled="theme.isChangingTheme.value"
             @click="theme.importTheme"
           >
             {{ theme.isImporting.value ? 'Importing…' : 'Import VS Code theme…' }}
-          </button>
-          <button
+          </UiButton>
+          <UiButton
             v-if="theme.importedTheme.value"
             type="button"
-            class="text-button"
+            variant="text"
             :disabled="theme.isChangingTheme.value"
             @click="theme.removeImportedTheme"
           >
             Remove imported theme
-          </button>
+          </UiButton>
         </div>
       </div>
 
-      <p
+      <UiAlert
         v-if="theme.status.value"
         class="theme-status"
-        :data-tone="theme.status.value.tone"
-        :role="theme.status.value.tone === 'error' ? 'alert' : undefined"
-        aria-live="polite"
+        :tone="themeStatusTone"
       >
         <strong v-if="theme.status.value.tone === 'error'">Error:</strong>
         {{ theme.status.value.message }}
-      </p>
-    </section>
+      </UiAlert>
+    </UiSurface>
 
     <section class="settings-group" aria-labelledby="data-sources-heading">
       <div>
@@ -160,27 +162,37 @@
         @start="startImport"
         @cancel="cancelImport"
       />
-      <article v-else class="panel source-card">
+      <UiSurface v-else as="article" class="panel source-card" padding="default">
         <div>
           <h3>Codex</h3>
           <p>Codex session import is available in the desktop app.</p>
         </div>
-        <span class="status-badge">Unavailable</span>
-      </article>
+        <UiBadge>Unavailable</UiBadge>
+      </UiSurface>
 
-      <article class="panel source-card">
+      <UiSurface as="article" class="panel source-card" padding="default">
         <div>
           <h3>Claude Code</h3>
           <p>The settings boundary is ready for a future Claude Code adapter; importing is not implemented yet.</p>
         </div>
-        <span class="status-badge" data-state="planned">Planned</span>
-      </article>
+        <UiBadge tone="info">Planned</UiBadge>
+      </UiSurface>
     </section>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+
+import {
+  UiAlert,
+  UiBadge,
+  UiButton,
+  UiField,
+  UiInput,
+  UiSelect,
+  UiSurface,
+} from '@filipgutica/ui'
 
 import type { ImportJobStatus } from '@shared/contracts'
 
@@ -201,14 +213,18 @@ const importApi = api.getImportStatus && api.startImport && api.cancelImport
   : null
 let importPollTimer: ReturnType<typeof setTimeout> | undefined
 
-const previewColors = computed(() => {
-  if (theme.resolvedTheme.value === 'imported' && theme.importedTheme.value) {
-    const { tokens } = theme.importedTheme.value
-    return [tokens.pageBackground, tokens.textPrimary, tokens.link, tokens.accent, tokens.error]
-  }
-  return theme.resolvedTheme.value === 'dark'
-    ? ['#1E1E2E', '#CDD6F4', '#89B4FA', '#CBA6F7', '#F38BA8']
-    : ['#EFF1F5', '#4C4F69', '#1E66F5', '#8839EF', '#D20F39']
+const previewColors = [
+  'var(--color-bg)',
+  'var(--color-text)',
+  'var(--color-link)',
+  'var(--color-accent)',
+  'var(--color-error)',
+] as const
+
+const themeStatusTone = computed(() => {
+  if (theme.status.value?.tone === 'error') return 'error'
+  if (theme.status.value?.tone === 'success') return 'success'
+  return 'neutral'
 })
 
 const formatDownloads = (value: number): string => new Intl.NumberFormat(undefined, {

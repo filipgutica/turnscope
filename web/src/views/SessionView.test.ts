@@ -104,9 +104,11 @@ describe('SessionView', () => {
     await flushPromises()
 
     expect(getEvidence).toHaveBeenCalledWith('source-1')
-    expect(wrapper.get('[role="dialog"]').attributes('aria-modal')).toBe('true')
-    expect(wrapper.text()).toContain('fixture.jsonl:1')
-    expect(wrapper.find('script').exists()).toBe(false)
+    const dialog = document.body.querySelector('[role="dialog"]')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.textContent).toContain('fixture.jsonl:1')
+    expect(document.body.querySelector('script')).toBeNull()
+    wrapper.unmount()
   })
 
   it('lets the user override an inferred correction classification', async () => {
@@ -147,7 +149,7 @@ describe('SessionView', () => {
     await flushPromises()
 
     await wrapper.get('.correction-editor select').setValue('approval')
-    await wrapper.get('.correction-editor input[type="checkbox"]').setValue(false)
+    await wrapper.get('.correction-editor [role="checkbox"]').trigger('click')
     await wrapper.get('.correction-editor').trigger('submit')
     await flushPromises()
 

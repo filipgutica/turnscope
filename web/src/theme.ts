@@ -1,12 +1,11 @@
 import { computed, onMounted, onUnmounted, ref, watch, type InjectionKey } from 'vue'
 
-import type { TurnscopeThemeApi } from '@shared/api'
 import {
-  semanticTokenKeys,
+  applySemanticTheme,
   type NormalizedTheme,
   type OpenVsxThemeSummary,
-  type SemanticThemeTokens,
-} from '@shared/theme'
+} from '@filipgutica/ui/theme'
+import type { TurnscopeThemeApi } from '@shared/api'
 
 export type ThemePreference = 'light' | 'dark' | 'system' | 'imported'
 export type ResolvedTheme = 'light' | 'dark' | 'imported'
@@ -16,39 +15,8 @@ interface ThemeStatus {
   message: string
 }
 
-const cssVariables = {
-  pageBackground: '--color-bg',
-  surface: '--color-surface',
-  surfaceRaised: '--color-surface-raised',
-  surfaceMuted: '--color-surface-muted',
-  textPrimary: '--color-text',
-  textMuted: '--color-muted',
-  border: '--color-border',
-  borderSubtle: '--color-border-subtle',
-  link: '--color-link',
-  accent: '--color-accent',
-  focus: '--color-focus',
-  buttonBackground: '--color-button-bg',
-  buttonForeground: '--color-button-text',
-  buttonHoverBackground: '--color-button-hover',
-  inputBackground: '--color-input-bg',
-  inputForeground: '--color-input-text',
-  inputBorder: '--color-input-border',
-  inputPlaceholder: '--color-input-placeholder',
-  rowHoverBackground: '--color-row-hover',
-  rowSelectedBackground: '--color-row-selected',
-  rowSelectedForeground: '--color-row-selected-text',
-  codeBackground: '--color-code',
-  codeForeground: '--color-code-text',
-  error: '--color-error',
-  warning: '--color-warning',
-  success: '--color-success',
-  info: '--color-info',
-  progress: '--color-progress',
-} satisfies Record<keyof SemanticThemeTokens, string>
-
 interface ThemeRoot {
-  classList: { toggle: (name: string, enabled: boolean) => unknown }
+  classList: { toggle: (name: string, enabled?: boolean) => unknown }
   style: {
     setProperty: (name: string, value: string) => unknown
     removeProperty: (name: string) => unknown
@@ -78,11 +46,7 @@ export const applyTheme = ({
   importedTheme: NormalizedTheme | null
 }): void => {
   const activeImport = resolvedTheme === 'imported' ? importedTheme : null
-  for (const key of semanticTokenKeys) {
-    const variable = cssVariables[key]
-    if (activeImport) root.style.setProperty(variable, activeImport.tokens[key])
-    else root.style.removeProperty(variable)
-  }
+  applySemanticTheme({ root, theme: activeImport })
 
   const appearance = activeImport?.appearance ?? resolvedTheme
   const isDark = appearance === 'dark' || appearance === 'high-contrast-dark'

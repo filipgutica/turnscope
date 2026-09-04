@@ -6,12 +6,12 @@ import type {
   NormalizedTheme,
   ThemeImportResult,
   ThemeRemovalResult,
-} from '../shared/theme.js'
+} from '@filipgutica/ui/theme'
 import {
   ThemeValidationError,
   isNormalizedTheme,
   parseVsCodeTheme,
-} from '../shared/theme.js'
+} from '@filipgutica/ui/theme'
 
 export const MAX_THEME_FILE_BYTES = 1024 * 1024
 

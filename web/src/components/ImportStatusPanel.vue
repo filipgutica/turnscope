@@ -1,11 +1,11 @@
 <template>
-  <section class="panel import-panel" aria-labelledby="import-heading">
+  <UiSurface class="panel import-panel" padding="default" aria-labelledby="import-heading">
     <div class="section-heading import-panel__heading">
       <div>
         <p class="eyebrow">Local data</p>
         <h2 id="import-heading">Codex import</h2>
       </div>
-      <span class="status-badge" :data-state="status.state">{{ statusLabel }}</span>
+      <UiBadge :tone="statusTone">{{ statusLabel }}</UiBadge>
     </div>
 
     <div class="import-panel__action">
@@ -13,26 +13,21 @@
         <strong>{{ primaryMessage }}</strong>
         <p>{{ supportingMessage }}</p>
       </div>
-      <button
-        type="button"
-        :class="{ 'secondary-button': status.state === 'running' }"
+      <UiButton
+        :variant="status.state === 'running' ? 'danger' : 'primary'"
         @click="onAction"
       >
         {{ actionLabel }}
-      </button>
+      </UiButton>
     </div>
 
     <template v-if="status.state === 'running'">
-      <div
+      <UiProgress
         class="import-progress"
-        role="progressbar"
-        aria-label="Codex import progress"
-        :aria-valuemin="0"
-        :aria-valuemax="status.progress.filesTotal"
-        :aria-valuenow="status.progress.filesProcessed"
-      >
-        <span :style="{ width: `${progressPercent}%` }" />
-      </div>
+        label="Codex import progress"
+        :max="Math.max(1, status.progress.filesTotal)"
+        :value="status.progress.filesProcessed"
+      />
       <div class="import-progress__copy">
         <strong>{{ status.progress.filesProcessed }} of {{ status.progress.filesTotal }} files</strong>
         <span>{{ phaseLabel }}</span>
@@ -61,7 +56,7 @@
       </div>
     </dl>
 
-    <p v-if="status.error" class="error-message" role="alert">{{ status.error }}</p>
+    <UiAlert v-if="status.error" class="error-message" tone="danger">{{ status.error }}</UiAlert>
 
     <details v-if="status.warnings.length > 0" class="import-warnings">
       <summary>View import warnings ({{ formatCount(status.warningCount) }})</summary>
@@ -75,11 +70,13 @@
         Showing the first {{ status.warnings.length }} warnings.
       </p>
     </details>
-  </section>
+  </UiSurface>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+
+import { UiAlert, UiBadge, UiButton, UiProgress, UiSurface } from '@filipgutica/ui'
 
 import type { ImportJobStatus } from '@shared/contracts'
 
@@ -100,10 +97,6 @@ const onAction = (): void => {
 
 const formatCount = (value: number): string => new Intl.NumberFormat().format(value)
 
-const progressPercent = computed(() => status.progress.filesTotal === 0
-  ? 0
-  : Math.min(100, (status.progress.filesProcessed / status.progress.filesTotal) * 100))
-
 const statusLabel = computed(() => ({
   idle: 'Ready',
   running: 'Importing',
@@ -111,6 +104,14 @@ const statusLabel = computed(() => ({
   failed: 'Needs attention',
   cancelled: 'Stopped',
 })[status.state])
+
+const statusTone = computed(() => ({
+  idle: 'neutral',
+  running: 'info',
+  completed: 'success',
+  failed: 'danger',
+  cancelled: 'warning',
+} as const)[status.state])
 
 const primaryMessage = computed(() => ({
   idle: 'Bring your local Codex sessions into Turnscope.',

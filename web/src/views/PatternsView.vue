@@ -6,41 +6,41 @@
         <h1>Pattern explorer</h1>
         <p>Start with observed evidence. Inferred patterns are labeled and never presented as automatic judgments.</p>
       </div>
-      <button type="button" class="secondary-button" :disabled="loading" @click="loadDiagnostics">
+      <UiButton variant="secondary" :loading="loading" @click="loadDiagnostics">
         Refresh
-      </button>
+      </UiButton>
     </header>
 
     <p v-if="loading" class="status-message">Loading diagnostics…</p>
-    <div v-else-if="error" class="error-message" role="alert">
+    <UiAlert v-else-if="error" class="error-message" tone="danger">
       <p>{{ error }}</p>
-      <button type="button" @click="loadDiagnostics">Retry</button>
-    </div>
+      <UiButton @click="loadDiagnostics">Retry</UiButton>
+    </UiAlert>
     <template v-else-if="diagnostics">
       <section class="metric-grid" aria-label="Diagnostic overview">
-        <article class="metric-card">
+        <UiSurface as="article" class="metric-card" padding="default">
           <span>Counted corrections</span>
           <strong>{{ formatNumber(diagnostics.countedCorrections) }}</strong>
           <small>{{ formatNumber(diagnostics.correctionCandidates) }} heuristic candidates</small>
-        </article>
-        <article class="metric-card">
+        </UiSurface>
+        <UiSurface as="article" class="metric-card" padding="default">
           <span>Failed tool events</span>
           <strong>{{ formatNumber(diagnostics.failedToolEvents) }}</strong>
           <small>Directly reported failed or error status</small>
-        </article>
-        <article class="metric-card">
+        </UiSurface>
+        <UiSurface as="article" class="metric-card" padding="default">
           <span>Token coverage</span>
           <strong>{{ formatPercent(diagnostics.tokenCoverage.coverageRatio) }}</strong>
           <small>{{ formatNumber(diagnostics.tokenCoverage.sessionsWithUsage) }} of {{ formatNumber(diagnostics.tokenCoverage.totalSessions) }} sessions</small>
-        </article>
-        <article class="metric-card">
+        </UiSurface>
+        <UiSurface as="article" class="metric-card" padding="default">
           <span>Detected repeat patterns</span>
           <strong>{{ formatNumber(diagnostics.signalCount) }}</strong>
           <small>Evidence-backed detector results</small>
-        </article>
+        </UiSurface>
       </section>
 
-      <section class="panel diagnostic-section">
+      <UiSurface class="panel diagnostic-section" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Corrections and mistakes</p>
@@ -57,9 +57,9 @@
           :total="diagnostics.correctionCategories.length"
           label="Correction categories"
         />
-      </section>
+      </UiSurface>
 
-      <section class="panel diagnostic-section">
+      <UiSurface class="panel diagnostic-section" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Tool reliability</p>
@@ -78,17 +78,18 @@
           label="Tool failure categories"
         />
         <p v-else class="empty-state">No failed tool events were imported.</p>
-      </section>
+      </UiSurface>
 
       <section class="question-grid">
-        <article class="panel diagnostic-section">
+        <UiSurface as="article" class="panel diagnostic-section" padding="default">
           <p class="eyebrow">Token efficiency</p>
           <h2>Can we identify wasted tokens?</h2>
           <strong class="diagnostic-answer">Not reliably yet</strong>
-          <progress
+          <UiProgress
             class="coverage-progress"
-            :value="diagnostics.tokenCoverage.sessionsWithUsage"
+            label="Token usage coverage"
             :max="Math.max(1, diagnostics.tokenCoverage.totalSessions)"
+            :value="diagnostics.tokenCoverage.sessionsWithUsage"
           />
           <p>
             Usage exists for {{ formatNumber(diagnostics.tokenCoverage.sessionsWithUsage) }} of
@@ -101,9 +102,9 @@
             <div><dt>Output tokens</dt><dd>{{ formatOptionalNumber(diagnostics.tokenCoverage.outputTokens) }}</dd></div>
           </dl>
           <p class="diagnostic-limitation">{{ diagnostics.tokenCoverage.limitation }}</p>
-        </article>
+        </UiSurface>
 
-        <article class="panel diagnostic-section">
+        <UiSurface as="article" class="panel diagnostic-section" padding="default">
           <p class="eyebrow">Skill efficiency</p>
           <h2>Which skills help or hurt?</h2>
           <strong class="diagnostic-answer">Not measurable yet</strong>
@@ -112,10 +113,10 @@
             The importer needs explicit skill invocation, completion, and outcome attribution before
             this can become a defensible comparison.
           </p>
-        </article>
+        </UiSurface>
       </section>
 
-      <section class="panel diagnostic-section">
+      <UiSurface class="panel diagnostic-section" padding="none">
         <div class="section-heading">
           <div>
             <p class="eyebrow">Repeated behavior</p>
@@ -128,10 +129,12 @@
           still available above.
         </p>
         <div v-else class="pattern-grid">
-          <article
+          <UiSurface
             v-for="pattern in diagnostics.signals"
             :key="pattern.id"
+            as="article"
             class="pattern-card"
+            padding="default"
             :data-dismissed="pattern.dismissed"
           >
             <div class="pattern-card__heading">
@@ -153,9 +156,9 @@
                 {{ evidence.label }}
               </RouterLink>
             </div>
-          </article>
+          </UiSurface>
         </div>
-      </section>
+      </UiSurface>
     </template>
   </section>
 </template>
@@ -163,6 +166,8 @@
 <script setup lang="ts">
 import { h, inject, onMounted, ref } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
+
+import { UiAlert, UiButton, UiProgress, UiSurface } from '@filipgutica/ui'
 
 import type {
   CorrectionDiagnostic,
