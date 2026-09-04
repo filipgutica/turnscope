@@ -6,6 +6,7 @@ import {
   getOverview,
   getProjectDetail,
   getSessionDetail,
+  getToolHealth,
   listPatterns,
   percentile,
 } from '../../src/analytics.js'
@@ -19,8 +20,8 @@ describe('percentile', () => {
   })
 })
 
-describe('overview duration', () => {
-  it('sums each session span instead of counting idle time between sessions', () => {
+describe('overview session span', () => {
+  it('reports covered median and P90 spans without summing sessions', () => {
     const database = openDatabase({ path: ':memory:' })
     database.prepare(`
       INSERT INTO product_installations (
@@ -36,22 +37,54 @@ describe('overview duration', () => {
         id, installation_id, thread_id, source_session_id, source_file, started_at, ended_at
       ) VALUES (?, 'installation', 'thread', ?, ?, ?, ?)
     `)
-    insertSession.run(
-      'session-1',
-      'thread-1',
-      'first.jsonl',
-      '2026-09-01T10:00:00.000Z',
-      '2026-09-01T10:00:10.000Z',
-    )
-    insertSession.run(
-      'session-2',
-      'thread-2',
-      'second.jsonl',
-      '2026-09-02T10:00:00.000Z',
-      '2026-09-02T10:00:20.000Z',
-    )
+    for (const [id, start, end] of [
+      ['session-1', '2026-09-01T10:00:00.000Z', '2026-09-01T10:00:10.000Z'],
+      ['session-2', '2026-09-02T10:00:00.000Z', '2026-09-02T10:00:20.000Z'],
+      ['session-3', '2026-09-03T10:00:00.000Z', '2026-09-03T10:00:30.000Z'],
+      ['session-outlier', '2026-09-04T10:00:00.000Z', '2026-09-04T10:16:40.000Z'],
+      ['session-missing', null, null],
+    ] as const) insertSession.run(id, `source-${id}`, `${id}.jsonl`, start, end)
 
-    expect(getOverview(database).duration.value).toBe(30_000)
+    const overview = getOverview(database, { range: 'all' }, new Date('2026-09-05T00:00:00Z'))
+    expect(overview).not.toHaveProperty('duration')
+    expect(overview.sessionSpan).toMatchObject({
+      medianMs: 25_000,
+      coverage: { numerator: 4, denominator: 5, ratio: 0.8 },
+    })
+    expect(overview.sessionSpan.p90Ms).toBeCloseTo(709_000)
+    expect(overview.sessionSpan.definition).toContain('not active agent time')
+    closeDatabase(database)
+  })
+
+  it('uses inclusive rolling boundaries and excludes future or unplaceable sessions', () => {
+    const database = openDatabase({ path: ':memory:' })
+    database.prepare(`INSERT INTO product_installations (
+      id, product, source_root, adapter_version, compatibility
+    ) VALUES ('installation', 'codex', '/sanitized', 'fixture', 'warning')`).run()
+    database.prepare(`INSERT INTO threads (id, installation_id, source_thread_id)
+      VALUES ('thread', 'installation', 'source-thread')`).run()
+    const insert = database.prepare(`INSERT INTO sessions (
+      id, installation_id, thread_id, source_session_id, source_file, started_at, ended_at
+    ) VALUES (?, 'installation', 'thread', ?, ?, ?, ?)`)
+    insert.run('boundary', 'boundary', 'boundary.jsonl', '2026-08-31T12:00:00.000Z', '2026-08-31T12:00:00.000Z')
+    insert.run('before', 'before', 'before.jsonl', '2026-08-31T11:59:59.999Z', '2026-08-31T11:59:59.999Z')
+    insert.run('future', 'future', 'future.jsonl', '2026-09-30T12:00:00.001Z', '2026-09-30T12:00:00.001Z')
+    insert.run('missing', 'missing', 'missing.jsonl', null, null)
+    const insertInvocation = database.prepare(`INSERT INTO tool_invocations (
+      id, installation_id, session_id, source_invocation_id, category, occurred_at, pairing_state
+    ) VALUES (?, 'installation', ?, ?, 'terminal', ?, 'single_record')`)
+    insertInvocation.run('tool-boundary', 'boundary', 'source-tool-boundary', '2026-08-31T12:00:00.000Z')
+    insertInvocation.run('tool-before', 'boundary', 'source-tool-before', '2026-08-31T11:59:59.999Z')
+    insertInvocation.run('tool-future', 'boundary', 'source-tool-future', '2026-09-30T12:00:00.001Z')
+    insertInvocation.run('tool-missing', 'boundary', 'source-tool-missing', null)
+
+    const now = new Date('2026-09-30T12:00:00.000Z')
+    const rollingOverview = getOverview(database, { range: '30d' }, now)
+    expect(rollingOverview.recentSessions.value).toBe(1)
+    expect(rollingOverview.dataHealth.toolStatusCoverage.denominator).toBe(1)
+    expect(getOverview(database, { range: 'all' }, now).recentSessions.value).toBe(4)
+    expect(getToolHealth(database, { range: '30d' }, now).totalInvocations).toBe(1)
+    expect(getToolHealth(database, { range: 'all' }, now).totalInvocations).toBe(4)
     closeDatabase(database)
   })
 })
@@ -259,8 +292,8 @@ describe('pattern ordering', () => {
   })
 })
 
-describe('diagnostic coverage', () => {
-  it('separates observed counts from claims the imported data cannot support', () => {
+describe('tool health coverage', () => {
+  it('counts normalized invocations and keeps partial or unknown fields explicit', () => {
     const database = openDatabase({ path: ':memory:' })
     database.prepare(`
       INSERT INTO product_installations (
@@ -290,45 +323,186 @@ describe('diagnostic coverage', () => {
       ) VALUES ('event', 'installation', 'session', 'source', 'tool_result', 'tool', 1,
         'Failed command', 'command', 'failed', 250)
     `).run()
-    database.prepare(`
-      INSERT INTO corrections (
-        id, installation_id, session_id, event_id, category, confidence, explanation
-      ) VALUES ('correction', 'installation', 'session', 'event', 'agent_mistake', 0.9,
-        'The user corrected a likely agent mistake.')
-    `).run()
-    database.prepare(`
-      INSERT INTO usage_records (
-        id, installation_id, session_id, event_id, input_tokens, cached_input_tokens,
-        output_tokens
-      ) VALUES ('usage', 'installation', 'session', 'event', 100, 80, 20)
-    `).run()
+    database.prepare(`INSERT INTO tool_invocations (
+      id, installation_id, session_id, source_invocation_id, category, raw_tool_name,
+      signature, status, raw_status, duration_ms, occurred_at, status_event_id, pairing_state
+    ) VALUES ('tool-1', 'installation', 'session', 'source-tool-1', 'terminal', 'command',
+      'same command', 'failure', 'failed', 250, '2026-09-02T10:00:00Z', 'event', 'single_record')`).run()
+    database.prepare(`INSERT INTO tool_invocations (
+      id, installation_id, session_id, source_invocation_id, category, raw_tool_name,
+      signature, status, raw_status, duration_ms, occurred_at, pairing_state
+    ) VALUES ('tool-2', 'installation', 'session', 'source-tool-2', 'terminal', 'exec',
+      'same command', NULL, NULL, NULL, '2026-09-02T10:00:01Z', 'unpaired')`).run()
 
-    const diagnostics = getDiagnostics(database)
-
-    expect(diagnostics).toMatchObject({
-      correctionCandidates: 1,
-      countedCorrections: 1,
-      failedToolEvents: 1,
-      tokenCoverage: {
-        usageRecords: 1,
-        sessionsWithUsage: 1,
-        totalSessions: 1,
-        coverageRatio: 1,
-        inputTokens: 100,
-        cachedInputTokens: 80,
-        outputTokens: 20,
-      },
-      skillCoverage: { status: 'unavailable' },
+    const health = getToolHealth(database, { range: 'all' }, new Date('2026-09-03T00:00:00Z'))
+    expect(health).toMatchObject({
+      totalInvocations: 2,
+      statusCoverage: { numerator: 1, denominator: 2, ratio: 0.5 },
+      timingCoverage: { numerator: 1, denominator: 2, ratio: 0.5 },
     })
-    expect(diagnostics.correctionCategories[0]?.evidence).toEqual([
-      { eventId: 'event', sessionId: 'session', label: 'Session · event #1' },
-    ])
-    expect(diagnostics.toolFailures[0]).toMatchObject({
-      toolName: 'command',
-      recordedEvents: 1,
-      failures: 1,
-      affectedSessions: 1,
-      averageFailureDurationMs: 250,
+    expect(health.categories[0]).toMatchObject({
+      category: 'terminal',
+      uniqueInvocations: 2,
+      successfulInvocations: 0,
+      failedInvocations: 1,
+      successRate: { numerator: 0, denominator: 1, ratio: 0 },
+      repeatInvocations: 0,
+      medianDurationMs: 250,
+      p90DurationMs: 250,
+      permissionRejections: null,
+      cancellations: null,
+    })
+    expect(health.categories[0]?.evidence[0]).toMatchObject({ eventId: 'event', sessionId: 'session' })
+    closeDatabase(database)
+  })
+})
+
+describe('attention findings', () => {
+  it('hides findings below the status-coverage threshold and links evidence once coverage is sufficient', () => {
+    const database = openDatabase({ path: ':memory:' })
+    database.prepare(`INSERT INTO product_installations (
+      id, product, source_root, adapter_version, compatibility
+    ) VALUES ('installation', 'codex', '/sanitized', 'fixture', 'warning')`).run()
+    database.prepare(`INSERT INTO threads (id, installation_id, source_thread_id)
+      VALUES ('thread', 'installation', 'source-thread')`).run()
+    database.prepare(`INSERT INTO sessions (
+      id, installation_id, thread_id, source_session_id, source_file, title, started_at, ended_at
+    ) VALUES ('session', 'installation', 'thread', 'source', 'one.jsonl', 'Needs review',
+      '2026-09-01T10:00:00Z', '2026-09-01T10:05:00Z')`).run()
+    const insertRecord = database.prepare(`INSERT INTO source_records (
+      id, installation_id, session_id, source_file, source_pointer, source_order,
+      imported_at, last_seen_import_id, redacted_payload_gzip
+    ) VALUES (?, 'installation', 'session', 'one.jsonl', ?, ?, '2026-09-01T10:00:00Z', 'batch', X'00')`)
+    const insertEvent = database.prepare(`INSERT INTO events (
+      id, installation_id, session_id, source_record_id, kind, actor, occurred_at,
+      source_order, summary, tool_name, tool_status
+    ) VALUES (?, 'installation', 'session', ?, 'tool_completion', 'tool',
+      '2026-09-01T10:00:00Z', ?, 'Tool result', 'command', ?)`)
+    const insertInvocation = database.prepare(`INSERT INTO tool_invocations (
+      id, installation_id, session_id, source_invocation_id, category, raw_tool_name,
+      status, occurred_at, status_event_id, pairing_state
+    ) VALUES (?, 'installation', 'session', ?, 'terminal', 'command', ?,
+      '2026-09-01T10:00:00Z', ?, 'single_record')`)
+    for (let index = 1; index <= 4; index += 1) {
+      const status = index === 1 ? 'failure' : null
+      insertRecord.run(`source-${index}`, `one.jsonl#${index}`, index)
+      insertEvent.run(`event-${index}`, `source-${index}`, index, status)
+      insertInvocation.run(`tool-${index}`, `source-tool-${index}`, status, status ? `event-${index}` : null)
+    }
+
+    const now = new Date('2026-09-02T00:00:00Z')
+    const lowCoverage = getOverview(database, { range: 'all' }, now)
+    expect(lowCoverage.sessionsNeedingAttention.value).toBeNull()
+    expect(lowCoverage.sessionsNeedingAttention.evidence).toEqual([])
+    expect(lowCoverage.findings).toEqual([])
+    expect(lowCoverage.findingsLimitation).toContain('1 of 4')
+    expect(lowCoverage.recentSessionRows[0]).toMatchObject({
+      attentionStatus: 'coverage_limited',
+      evidence: [],
+    })
+
+    database.prepare(`UPDATE tool_invocations
+      SET status = 'success', status_event_id = CASE id WHEN 'tool-2' THEN 'event-2' ELSE 'event-3' END
+      WHERE id IN ('tool-2', 'tool-3')`).run()
+    const sufficientCoverage = getOverview(database, { range: 'all' }, now)
+    expect(sufficientCoverage.sessionsNeedingAttention.value).toBe(1)
+    expect(sufficientCoverage.findings[0]).toMatchObject({
+      title: 'Needs review',
+      evidence: [{ eventId: 'event-1', sessionId: 'session' }],
+    })
+    closeDatabase(database)
+  })
+})
+
+describe('data health states', () => {
+  it('keeps empty coverage unknown and exposes active compatibility warnings', () => {
+    const database = openDatabase({ path: ':memory:' })
+    database.prepare(`INSERT INTO product_installations (
+      id, product, product_version, source_root, adapter_version, compatibility, warning
+    ) VALUES ('installation', 'codex', '9.9.9', '/sanitized', 'fixture-v1', 'unsupported',
+      'This source version has not been validated.')`).run()
+    database.prepare(`INSERT INTO import_audits (
+      id, installation_id, started_at, completed_at, files_scanned, files_imported,
+      records_inserted, warnings_json, status
+    ) VALUES ('audit', 'installation', '2026-09-01T00:00:00Z', '2026-09-01T00:00:01Z',
+      2, 2, 0, ?, 'success')`).run(JSON.stringify([
+      { code: 'unsupported_source_version', message: 'Source schema is newer than supported.', source: 'one.jsonl' },
+      { code: 'unsupported_source_version', message: 'Source schema is newer than supported.', source: 'two.jsonl' },
+    ]))
+    database.prepare(`INSERT INTO source_files (
+      installation_id, relative_path, content_hash, size_bytes, modified_at_ms,
+      imported_at, adapter_version, warnings_json
+    ) VALUES ('installation', 'one.jsonl', 'hash', 1, 1, '2026-09-01T00:00:01Z',
+      'fixture-v1', ?)`).run(JSON.stringify([
+      { code: 'unsupported_source_version', message: 'Source schema is newer than supported.', source: 'one.jsonl' },
+      { code: 'unsupported_source_version', message: 'Source schema is newer than supported.', source: 'two.jsonl' },
+    ]))
+
+    const overview = getOverview(database, { range: 'all' }, new Date('2026-09-02T00:00:00Z'))
+    expect(overview.dataHealth).toMatchObject({
+      importedSessions: 0,
+      tokenUsageCoverage: { numerator: 0, denominator: 0, ratio: null },
+      toolStatusCoverage: { numerator: 0, denominator: 0, ratio: null },
+      outcomeCoverage: { numerator: 0, denominator: 0, ratio: null },
+      sources: [{ productVersion: '9.9.9', adapterVersion: 'fixture-v1', compatibility: 'unsupported' }],
+    })
+    expect(overview.dataHealth.activeWarnings[0]).toMatchObject({
+      code: 'unsupported_source_version',
+      message: 'Source schema is newer than supported. Reported by 2 source files.',
+      source: 'one.jsonl',
+    })
+    closeDatabase(database)
+  })
+
+  it('does not count an all-null usage row as token-usage coverage', () => {
+    const database = openDatabase({ path: ':memory:' })
+    database.prepare(`INSERT INTO product_installations (
+      id, product, source_root, adapter_version, compatibility
+    ) VALUES ('installation', 'codex', '/sanitized', 'fixture', 'warning')`).run()
+    database.prepare(`INSERT INTO threads (id, installation_id, source_thread_id)
+      VALUES ('thread', 'installation', 'source-thread')`).run()
+    database.prepare(`INSERT INTO sessions (
+      id, installation_id, thread_id, source_session_id, source_file, title, started_at
+    ) VALUES ('session', 'installation', 'thread', 'source-session', 'session.jsonl',
+      'Fixture', '2026-09-01T10:00:00Z')`).run()
+    database.prepare(`INSERT INTO source_records (
+      id, installation_id, session_id, source_file, source_pointer, source_order,
+      imported_at, last_seen_import_id, redacted_payload_gzip
+    ) VALUES ('source', 'installation', 'session', 'session.jsonl', 'session.jsonl#1', 1,
+      '2026-09-01T10:00:00Z', 'batch', X'00')`).run()
+    database.prepare(`INSERT INTO events (
+      id, installation_id, session_id, source_record_id, kind, occurred_at, source_order, summary
+    ) VALUES ('event', 'installation', 'session', 'source', 'usage',
+      '2026-09-01T10:00:00Z', 1, 'Usage unavailable')`).run()
+    database.prepare(`INSERT INTO usage_records (
+      id, installation_id, session_id, event_id
+    ) VALUES ('usage', 'installation', 'session', 'event')`).run()
+
+    const overview = getOverview(database, { range: 'all' }, new Date('2026-09-02T00:00:00Z'))
+    expect(overview.dataHealth.tokenUsageCoverage).toMatchObject({ numerator: 0, denominator: 1, ratio: 0 })
+    expect(getDiagnostics(database).tokenCoverage).toMatchObject({
+      usageRecords: 0,
+      sessionsWithUsage: 0,
+      totalSessions: 1,
+      coverageRatio: 0,
+    })
+    closeDatabase(database)
+  })
+
+  it('reports when pre-normalization source files require reimport', () => {
+    const database = openDatabase({ path: ':memory:' })
+    database.prepare(`INSERT INTO product_installations (
+      id, product, source_root, adapter_version, compatibility
+    ) VALUES ('installation', 'codex', '/sanitized', 'legacy-adapter', 'warning')`).run()
+    database.prepare(`INSERT INTO source_files (
+      installation_id, relative_path, content_hash, size_bytes, modified_at_ms, imported_at
+    ) VALUES ('installation', 'legacy.jsonl', 'hash', 1, 1, '2026-09-01T00:00:00Z')`).run()
+
+    const overview = getOverview(database, { range: 'all' }, new Date('2026-09-02T00:00:00Z'))
+    expect(overview.dataHealth.activeWarnings).toContainEqual({
+      code: 'normalization_reimport_required',
+      message: '1 imported source file must be reimported before normalized tool health is available.',
+      source: 'Database upgrade',
     })
     closeDatabase(database)
   })

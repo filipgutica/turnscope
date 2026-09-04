@@ -4,6 +4,7 @@ import type { TurnscopeApi, TurnscopeImportApi } from '@shared/api'
 
 import type {
   DiagnosticsResponse,
+  AnalyticsRangeQuery,
   OverviewResponse,
   PatternSignal,
   ProjectDetailResponse,
@@ -11,6 +12,7 @@ import type {
   SessionDetailResponse,
   SessionTimelineQuery,
   SourceEvidenceResponse,
+  ToolHealthResponse,
 } from '@shared/contracts'
 
 export type ApiClient = TurnscopeApi & Partial<TurnscopeImportApi>
@@ -64,7 +66,7 @@ const getErrorMessage = async (response: Response): Promise<string> => {
 
 const withQuery = (
   path: string,
-  query: ProjectSessionsQuery | SessionTimelineQuery | undefined,
+  query: AnalyticsRangeQuery | ProjectSessionsQuery | SessionTimelineQuery | undefined,
 ): string => {
   if (!query) return path
   const params = new URLSearchParams()
@@ -99,7 +101,8 @@ export const createApiClient = ({
 
   return {
     getDiagnostics: () => request<DiagnosticsResponse>('/api/diagnostics'),
-    getOverview: () => request<OverviewResponse>('/api/overview'),
+    getOverview: query => request<OverviewResponse>(withQuery('/api/overview', query)),
+    getToolHealth: query => request<ToolHealthResponse>(withQuery('/api/tool-health', query)),
     getProject: (projectId, query) =>
       request<ProjectDetailResponse>(withQuery(
         `/api/projects/${encodeURIComponent(projectId)}`,

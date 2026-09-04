@@ -9,6 +9,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } fr
 import type { TurnscopeApi } from '../shared/api.js'
 import type {
   CorrectionOverrideInput,
+  AnalyticsRangeQuery,
   ProjectSessionsQuery,
   SessionTimelineQuery,
   SignalOverrideInput,
@@ -49,7 +50,10 @@ const registerIpcHandlers = (
   openVsxThemeService: OpenVsxThemeService,
 ): void => {
   ipcMain.handle(turnscopeIpcChannels.getDiagnostics, () => api.getDiagnostics())
-  ipcMain.handle(turnscopeIpcChannels.getOverview, () => api.getOverview())
+  ipcMain.handle(turnscopeIpcChannels.getOverview, (_event, query: AnalyticsRangeQuery | undefined) =>
+    api.getOverview(query))
+  ipcMain.handle(turnscopeIpcChannels.getToolHealth, (_event, query: AnalyticsRangeQuery | undefined) =>
+    api.getToolHealth(query))
   ipcMain.handle(turnscopeIpcChannels.getProject, (
     _event,
     projectId: unknown,

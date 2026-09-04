@@ -4,6 +4,7 @@
       <RouterLink class="brand" :to="{ name: 'overview' }">Turnscope</RouterLink>
       <nav aria-label="Primary navigation">
         <RouterLink :to="{ name: 'overview' }">Overview</RouterLink>
+        <RouterLink :to="{ name: 'tool-health' }">Tool Health</RouterLink>
         <RouterLink :to="{ name: 'patterns' }">Patterns</RouterLink>
         <RouterLink :to="{ name: 'settings' }">Settings</RouterLink>
       </nav>
@@ -19,7 +20,9 @@
 import { provide } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 
+import { analyticsRangeKey, createAnalyticsRange } from './analytics-range'
 import { themeKey, useTheme } from './theme'
 
 provide(themeKey, useTheme())
+provide(analyticsRangeKey, createAnalyticsRange())
 </script>

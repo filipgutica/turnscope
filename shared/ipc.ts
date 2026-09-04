@@ -1,5 +1,6 @@
 export const turnscopeIpcChannels = {
   getOverview: 'turnscope:get-overview',
+  getToolHealth: 'turnscope:get-tool-health',
   getProject: 'turnscope:get-project',
   getSession: 'turnscope:get-session',
   getPatterns: 'turnscope:get-patterns',

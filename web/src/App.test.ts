@@ -44,6 +44,7 @@ const idleImport: ImportJobStatus = {
 
 const api: ApiClient = {
   getOverview: async () => { throw new Error('Not used') },
+  getToolHealth: async () => { throw new Error('Not used') },
   getDiagnostics: async () => { throw new Error('Not used') },
   getProject: async () => { throw new Error('Not used') },
   getSession: async () => { throw new Error('Not used') },
@@ -79,6 +80,7 @@ const mountSettings = async ({
     history: createMemoryHistory(),
     routes: [
       { path: '/', name: 'overview', component: { template: '<div>Overview</div>' } },
+      { path: '/tool-health', name: 'tool-health', component: { template: '<div>Tool Health</div>' } },
       { path: '/patterns', name: 'patterns', component: { template: '<div>Patterns</div>' } },
       { path: '/settings', name: 'settings', component: SettingsView },
     ],

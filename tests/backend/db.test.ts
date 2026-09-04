@@ -14,7 +14,7 @@ describe('database migrations', () => {
     const reopened = openDatabase({ path })
 
     expect(reopened.prepare('SELECT version FROM schema_migrations ORDER BY version').all())
-      .toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }])
+      .toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }])
     expect(reopened.prepare(`
       SELECT name FROM sqlite_master
       WHERE type = 'index' AND name IN ('source_records_session', 'sessions_thread')
@@ -36,7 +36,7 @@ describe('database migrations', () => {
     future.close()
 
     expect(() => openDatabase({ path })).toThrow(
-      'Database schema version 99 is newer than supported version 5',
+      'Database schema version 99 is newer than supported version 7',
     )
   })
 })

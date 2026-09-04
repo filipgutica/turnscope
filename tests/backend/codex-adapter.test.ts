@@ -4,7 +4,29 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { createCodexAdapter } from '../../src/adapters/codex.js'
+import { createCodexAdapter, normalizeCodexToolCategory, stripInjectedUserContent } from '../../src/adapters/codex.js'
+
+describe('Codex tool aliases', () => {
+  it('maps observed provider aliases to stable semantic categories', () => {
+    expect(['command', 'exec_command'].map(normalizeCodexToolCategory))
+      .toEqual(['terminal', 'terminal'])
+    expect(normalizeCodexToolCategory('exec')).toBe('other')
+    expect(['apply_patch', 'patch_apply', 'write_file'].map(normalizeCodexToolCategory))
+      .toEqual(['file_change', 'file_change', 'file_change'])
+    expect(['rg', 'grep', 'search'].map(normalizeCodexToolCategory))
+      .toEqual(['search', 'search', 'search'])
+    expect(normalizeCodexToolCategory('mcp__server__tool')).toBe('mcp')
+    expect(normalizeCodexToolCategory('provider_specific_tool')).toBe('other')
+  })
+})
+
+describe('Codex injected content', () => {
+  it('removes path-qualified AGENTS headings and instruction bodies', () => {
+    expect(stripInjectedUserContent(
+      '# AGENTS.md instructions for /workspace\n<INSTRUCTIONS>Wrong: revert this.</INSTRUCTIONS>\nWhat tests did you run?',
+    )).toBe('What tests did you run?')
+  })
+})
 
 describe('Codex product discovery', () => {
   it('uses the newest observed session version instead of the oldest archive', async () => {

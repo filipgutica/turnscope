@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import fastifyStatic from '@fastify/static'
 import Fastify, { type FastifyInstance } from 'fastify'
 
-import type { ProjectSessionsQuery, SessionTimelineQuery } from '../shared/contracts.js'
+import type { AnalyticsRangeQuery, ProjectSessionsQuery, SessionTimelineQuery } from '../shared/contracts.js'
 import { deleteInstallationData, type TurnscopeDatabase } from './db.js'
 import { createLocalApi, LocalApiError } from './local-api.js'
 
@@ -15,6 +15,14 @@ interface PageQuerystring {
   issue?: string
   actor?: string
   eventId?: string
+  range?: string
+}
+
+const analyticsPageQuery = (query: PageQuerystring): AnalyticsRangeQuery => {
+  if (query.range !== undefined && query.range !== '7d' && query.range !== '30d' && query.range !== 'all') {
+    throw new LocalApiError('Invalid analytics range', 400)
+  }
+  return query.range ? { range: query.range } : {}
 }
 
 const commonPageQuery = (query: PageQuerystring) => ({
@@ -78,7 +86,10 @@ export const createServer = ({
 
   server.get('/api/health', async () => ({ status: 'ok' }))
   server.get('/api/diagnostics', async () => api.getDiagnostics())
-  server.get('/api/overview', async () => api.getOverview())
+  server.get<{ Querystring: PageQuerystring }>('/api/overview', async (request) =>
+    api.getOverview(analyticsPageQuery(request.query)))
+  server.get<{ Querystring: PageQuerystring }>('/api/tool-health', async (request) =>
+    api.getToolHealth(analyticsPageQuery(request.query)))
   server.get('/api/patterns', async () => api.getPatterns())
   server.get<{ Params: { id: string }; Querystring: PageQuerystring }>(
     '/api/projects/:id',

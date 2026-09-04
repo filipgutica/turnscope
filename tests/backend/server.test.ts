@@ -60,7 +60,19 @@ describe('local API', () => {
       headers: { authorization: 'Bearer fixture-token' },
     })
     expect(overview.statusCode).toBe(200)
-    expect(overview.json().duration.evidence).toEqual([])
+    expect(overview.json()).not.toHaveProperty('duration')
+    expect(overview.json().sessionSpan.definition).toContain('not active agent time')
+    const toolHealth = await server.inject({
+      method: 'GET',
+      url: '/api/tool-health?range=all',
+      headers: { authorization: 'Bearer fixture-token' },
+    })
+    expect(toolHealth.statusCode).toBe(200)
+    expect(toolHealth.json()).toMatchObject({
+      range: { range: 'all', label: 'All time' },
+      totalInvocations: 2,
+      statusCoverage: { numerator: 2, denominator: 2 },
+    })
     const diagnostics = await server.inject({
       method: 'GET',
       url: '/api/diagnostics',
@@ -135,9 +147,8 @@ describe('local API', () => {
     })
     expect(update.statusCode).toBe(204)
 
-    const updatedOverview = await server.inject({ method: 'GET', url: '/api/overview', headers })
-    expect(updatedOverview.json().corrections.value).toBe(0)
-    expect(updatedOverview.json().correctionRate.value).toBe(0)
+    const updatedDiagnostics = await server.inject({ method: 'GET', url: '/api/diagnostics', headers })
+    expect(updatedDiagnostics.json().countedCorrections).toBe(0)
     const updatedDetail = await server.inject({
       method: 'GET',
       url: `/api/sessions/${sessionId}`,
@@ -190,5 +201,16 @@ describe('local API', () => {
       countsAsCorrection: false,
     }))
     expect(updated.json().signals[0]).toMatchObject({ dismissed: true, hasUserOverride: true })
+  })
+
+  it('validates analytics range controls at the HTTP boundary', async () => {
+    const { server } = await createImportedServer()
+    const response = await server.inject({
+      method: 'GET',
+      url: '/api/overview?range=year',
+      headers: { authorization: 'Bearer fixture-token' },
+    })
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toEqual({ error: 'Invalid analytics range' })
   })
 })

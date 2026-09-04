@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { getOverview, listPatterns } from '../../src/analytics.js'
+import { getDiagnostics, getOverview, getToolHealth, listPatterns } from '../../src/analytics.js'
 import { createCodexAdapter } from '../../src/adapters/codex.js'
 import type { SourceAdapter } from '../../src/adapters/types.js'
 import { closeDatabase, openDatabase } from '../../src/db.js'
@@ -85,6 +85,8 @@ describe('Codex import', () => {
     expect(second.recordsInserted).toBe(0)
     expect(secondEventIds).toEqual(firstEventIds)
     expect(readSourceFile).toHaveBeenCalledTimes(1)
+    expect(getOverview(database, { range: 'all' }).dataHealth.activeWarnings)
+      .toContainEqual(expect.objectContaining({ code: 'undocumented_source_format' }))
     const normalizedIdentity = database.prepare(`
       SELECT s.id AS sessionId, s.thread_id AS threadId, t.source_thread_id AS sourceThreadId
       FROM sessions s INNER JOIN threads t ON t.id = s.thread_id
@@ -101,18 +103,13 @@ describe('Codex import', () => {
     expect(storedTitle.title).not.toContain('sk-example-secret')
 
     const overview = getOverview(database)
-    expect(overview.sessions.value).toBe(1)
-    expect(overview.inputTokens.value).toBe(1300)
-    expect(overview.cachedInputTokens.value).toBe(500)
-    expect(overview.outputTokens.value).toBe(300)
-    expect(overview.cacheRatio.value).toBeCloseTo(500 / 1300)
-    expect(overview.corrections.value).toBe(1)
-    expect(overview.correctionRate.value).toBe(0.5)
-    expect(overview.duration.value).toBe(9000)
-    expect(overview.inputTokens.measurementClass).toBe('direct')
-    expect(overview.cacheRatio.measurementClass).toBe('derived')
-    expect(overview.corrections.measurementClass).toBe('inferred')
-    expect(overview.correctionRate.measurementClass).toBe('derived')
+    expect(overview.recentSessions.value).toBe(1)
+    expect(overview.sessionSpan.medianMs).toBe(9000)
+    expect(overview.sessionSpan.p90Ms).toBe(9000)
+    expect(overview.dataHealth.tokenUsageCoverage).toMatchObject({ numerator: 1, denominator: 1, ratio: 1 })
+    const diagnostics = getDiagnostics(database)
+    expect(diagnostics.tokenCoverage).toMatchObject({ inputTokens: 1300, cachedInputTokens: 500, outputTokens: 300 })
+    expect(diagnostics.countedCorrections).toBe(1)
 
     const patterns = listPatterns(database)
     expect(patterns).toHaveLength(1)
@@ -145,9 +142,7 @@ describe('Codex import', () => {
     await importFromAdapter({ database, adapter })
 
     const overview = getOverview(database)
-    expect(overview.inputTokens.value).toBeNull()
-    expect(overview.inputTokens.missingReason).toBe('No source usage records')
-    expect(overview.cacheRatio.value).toBeNull()
+    expect(overview.dataHealth.tokenUsageCoverage).toMatchObject({ numerator: 0, denominator: 1, ratio: 0 })
   })
 
   it('normalizes completed Codex items without mislabeling non-tools as tool calls', async () => {
@@ -181,8 +176,51 @@ describe('Codex import', () => {
     expect(database.prepare("SELECT COUNT(*) AS count FROM events WHERE kind = 'tool_call'").get())
       .toEqual({ count: 1 })
     expect(database.prepare('SELECT category FROM corrections').get()).toEqual({ category: 'approval' })
-    expect(getOverview(database).corrections.value).toBe(0)
-    expect(getOverview(database).correctionRate.value).toBe(0)
+    expect(getDiagnostics(database).countedCorrections).toBe(0)
+    const toolHealth = getToolHealth(database, { range: 'all' })
+    expect(toolHealth.totalInvocations).toBe(2)
+    expect(toolHealth.statusCoverage).toMatchObject({ numerator: 1, denominator: 2 })
+    expect(database.prepare(`
+      SELECT category, signature, duration_ms AS durationMs
+      FROM tool_invocations WHERE raw_tool_name = 'command'
+    `).get()).toEqual({ category: 'terminal', signature: 'sanitized command', durationMs: null })
+    expect(database.prepare('SELECT COUNT(*) AS count FROM tool_invocation_evidence').get())
+      .toEqual({ count: 3 })
+  })
+
+  it('pairs duplicate tool phases by exact source invocation id without increasing invocation counts', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'turnscope-tool-pairing-'))
+    cpSync(join(import.meta.dirname, '../fixtures/codex-item-types'), sourceRoot, { recursive: true })
+    const fixturePath = join(sourceRoot, 'sessions/rollout-item-types.jsonl')
+    const lines = readFileSync(fixturePath, 'utf8').trim().split('\n')
+    const duplicate = lines.find((line) => line.includes('custom_tool_call_output'))
+    if (!duplicate) throw new Error('Tool output fixture is missing')
+    writeFileSync(fixturePath, `${lines.join('\n')}\n${duplicate}\n`)
+    const database = createTestDatabase()
+
+    await importFromAdapter({ database, adapter: createCodexAdapter({ sourceRoot }) })
+
+    expect(getToolHealth(database, { range: 'all' }).totalInvocations).toBe(2)
+    expect(database.prepare('SELECT COUNT(*) AS count FROM tool_invocation_evidence').get())
+      .toEqual({ count: 4 })
+  })
+
+  it('excludes injected instructions, plugin catalogs, and host metadata from correction classification', async () => {
+    const sourceRoot = createFixtureSource()
+    const fixturePath = join(sourceRoot, 'sessions/2026/08/31/rollout-fixture.jsonl')
+    const content = readFileSync(fixturePath, 'utf8').replace(
+      'No, do not change the fixture. Fix the parser implementation instead.',
+      '<recommended_plugins>Wrong: fix this instead.</recommended_plugins>\n# AGENTS.md instructions\n<INSTRUCTIONS>No, wrong file. Revert it.</INSTRUCTIONS>\n<environment_context>Stop this approach.</environment_context>\nWhat tests did you run?',
+    )
+    writeFileSync(fixturePath, content)
+    const database = createTestDatabase()
+
+    await importFromAdapter({ database, adapter: createCodexAdapter({ sourceRoot }) })
+
+    expect(database.prepare('SELECT COUNT(*) AS count FROM corrections').get()).toEqual({ count: 0 })
+    const title = database.prepare('SELECT title FROM sessions LIMIT 1').get() as { title: string }
+    expect(title.title).not.toContain('AGENTS.md')
+    expect(title.title).not.toContain('INSTRUCTIONS')
   })
 
   it('keeps event identities stable across adapter parser upgrades', async () => {
@@ -198,7 +236,7 @@ describe('Codex import', () => {
       database,
       adapter: {
         ...createCodexAdapter({ sourceRoot }),
-        adapterVersion: 'codex-rollout-jsonl-v2',
+        adapterVersion: 'codex-rollout-jsonl-v5',
       },
     })).resolves.toMatchObject({ recordsInserted: 0 })
 
@@ -231,13 +269,8 @@ describe('Codex import', () => {
 
     await importFromAdapter({ database, adapter: createCodexAdapter({ sourceRoot }) })
 
-    const overview = getOverview(database)
-    expect(overview.inputTokens.value).toBeNull()
-    expect(overview.cachedInputTokens.value).toBeNull()
-    expect(overview.outputTokens.value).toBeNull()
-    expect(overview.inputTokens.missingReason).toBe(
-      'Some imported sessions lack complete input-token data',
-    )
+    const overview = getOverview(database, { range: 'all' })
+    expect(overview.dataHealth.tokenUsageCoverage).toMatchObject({ numerator: 1, denominator: 2, ratio: 0.5 })
   })
 
   it('preserves a user correction override when an active rollout is reimported', async () => {
@@ -262,7 +295,7 @@ describe('Codex import', () => {
       SELECT user_category AS category, user_counts_as_correction AS countsAsCorrection
       FROM corrections
     `).get()).toEqual({ category: 'approval', countsAsCorrection: 0 })
-    expect(getOverview(database).corrections.value).toBe(0)
+    expect(getDiagnostics(database).countedCorrections).toBe(0)
     expect(database.prepare(`
       SELECT user_dismissed AS dismissed FROM signals
     `).get()).toEqual({ dismissed: 1 })
@@ -281,6 +314,7 @@ describe('Codex import', () => {
         id: 'failing-installation',
         product: 'fixture-agent',
         productVersion: '1.0.0',
+        adapterVersion: 'fixture-v1',
         sourceRoot: '/sanitized/failing-source',
         compatibility: 'supported',
         warning: null,

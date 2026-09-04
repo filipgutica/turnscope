@@ -6,7 +6,7 @@
 {"timestamp":"2026-09-01T12:00:05.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"Extension","id":"item-extension","name":"sanitized-extension","status":"completed"}}}
 {"timestamp":"2026-09-01T12:00:06.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"SubAgentActivity","id":"item-subagent","agent_thread_id":"sanitized-child-thread","status":"completed"}}}
 {"timestamp":"2026-09-01T12:00:07.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"CollabAgentToolCall","id":"item-collab","receiver_thread_ids":["sanitized-child-thread"],"status":"completed"}}}
-{"timestamp":"2026-09-01T12:00:08.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","id":"item-command","command":"sanitized command","exit_code":0,"status":"completed"}}}
+{"timestamp":"2026-09-01T12:00:08.000Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"CommandExecution","id":"item-command","command":["sanitized","command"],"exit_code":0,"status":"completed","duration_ms":-10}}}
 {"timestamp":"2026-09-01T12:00:09.000Z","type":"response_item","payload":{"type":"reasoning","id":"response-reasoning","summary":"Sanitized response reasoning"}}
 {"timestamp":"2026-09-01T12:00:10.000Z","type":"response_item","payload":{"type":"agent_message","id":"response-agent","text":"Sanitized response agent message"}}
 {"timestamp":"2026-09-01T12:00:11.000Z","type":"response_item","payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"Sanitized developer message"}]}}
