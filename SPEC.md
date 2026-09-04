@@ -201,6 +201,12 @@ Settings owns import, data-source, appearance, and diagnostic controls. It inclu
 
 Each missing-data explanation names what is absent and which feature it prevents. The full data-health surface is not repeated on Activity or tool detail pages.
 
+### Theme-picker ownership
+
+Turnscope owns the theme-picker workflow: choosing System, Light, or Dark; discovering themes through Open VSX; importing and removing local theme files; and showing app-specific progress, error, and restoration states. `@filipgutica/ui` owns the reusable interaction primitives and accessibility behavior used by that workflow, plus semantic theme parsing, application, and color-token contracts. A reusable product-level theme picker does not belong in the shared package unless a second consumer establishes the same workflow contract.
+
+The default Settings surface shows the three built-in choices and installed themes. Community search and local file import remain behind one **Add theme** action. Open VSX search begins automatically after the user pauses typing; it does not require a separate submit button. Creating or editing themes is outside this release.
+
 ## Data and analytics requirements
 
 ### Normalized hierarchy
