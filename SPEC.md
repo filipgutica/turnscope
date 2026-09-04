@@ -1,6 +1,6 @@
 # Turnscope Product and Experience Specification
 
-**Status:** Ready for concept design
+**Status:** Awaiting concept approval
 
 **Scope:** First useful local agent-tool observability release
 
